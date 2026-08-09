@@ -1,0 +1,10 @@
+{
+  "name": "@eduflow/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "uvicorn main:app --reload --port 8000",
+    "start": "uvicorn main:app --port 8000",
+    "clean": "rm -rf __pycache__"
+  }
+}

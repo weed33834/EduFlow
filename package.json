@@ -1,0 +1,15 @@
+{
+  "name": "eduflow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "EduFlow 畅学 — AI-driven student self-learning platform",
+  "scripts": {
+    "dev": "pnpm --parallel -r run dev",
+    "build": "pnpm -r run build",
+    "lint": "pnpm -r run lint",
+    "clean": "pnpm -r run clean"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

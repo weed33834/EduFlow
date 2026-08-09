@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand: #4B3FE3;
+  --accent: #27D2BF;
+  --bg: #F7F8FC;
+  --surface: #FFFFFF;
+  --ink: #1A1A2E;
+  --muted: #6B7280;
+}
+
+body {
+  font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/80 backdrop-blur-xl border border-white/60 rounded-2xl shadow-lg;
+  }
+  .btn-primary {
+    @apply bg-brand-600 text-white px-6 py-2.5 rounded-full font-medium hover:bg-brand-700 transition-all duration-300;
+  }
+  .btn-secondary {
+    @apply bg-white text-brand-600 px-6 py-2.5 rounded-full font-medium border border-brand-200 hover:bg-brand-50 transition-all duration-300;
+  }
+  .input-field {
+    @apply w-full px-4 py-3 rounded-xl border border-gray-200 bg-white/80 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500 transition-all;
+  }
+}
