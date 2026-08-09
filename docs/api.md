@@ -1,16 +1,20 @@
 # API 文档
 
-> 文档版本: v1.0 | 最后更新: 2026-08-09
+> 文档版本: v2.0 | 最后更新: 2026-08-09
 
 ---
 
 ## 概述
 
-EduFlow 畅学 API 采用 RESTful 风格设计，所有 API 端点均以 `/api/v1/` 为前缀。请求和响应体使用 JSON 格式。
+EduFlow 畅学 API 采用 RESTful 风格设计，所有端点均以 `/api` 为前缀。请求和响应体使用 JSON 格式。系统包含三个独立的后端服务：
 
-- **Base URL**: `https://api.eduflow.example.com/api/v1`
-- **认证方式**: Bearer Token (JWT)
-- **内容类型**: `application/json`
+| 服务 | Base URL | 端口 | 说明 |
+|------|----------|------|------|
+| API 服务 | `http://localhost:8000/api` | 8000 | 主业务 API（认证、学习、练习、进度、AI 代理） |
+| AI 服务 | `http://localhost:8100/api` | 8100 | AI 智能体服务（直接调用） |
+| Engine 服务 | `http://localhost:8200/api` | 8200 | 学习引擎（知识追踪、间隔重复） |
+
+前端通过 Next.js rewrites 将 `/api/*` 代理到 API 服务（端口 8000）。
 
 ---
 
@@ -18,799 +22,577 @@ EduFlow 畅学 API 采用 RESTful 风格设计，所有 API 端点均以 `/api/v
 
 ### 认证
 
-所有受保护的 API 需要在请求头中携带 JWT Token：
+除注册、登录和健康检查外，所有 API 均需在请求头中携带 JWT Token：
 
 ```
 Authorization: Bearer <your_jwt_token>
 ```
 
-### 分页
+Token 通过 `POST /api/auth/register` 或 `POST /api/auth/login` 获取，默认有效期为 7 天。
 
-列表接口统一使用以下分页参数：
+### 响应格式
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `page` | integer | 1 | 页码，从 1 开始 |
-| `page_size` | integer | 20 | 每页条数，最大 100 |
-
-分页响应格式：
+成功响应直接返回 JSON 数据，无统一包装层。例如：
 
 ```json
 {
-  "code": 0,
-  "message": "success",
-  "data": {
-    "items": [],
-    "total": 100,
-    "page": 1,
-    "page_size": 20,
-    "total_pages": 5
-  }
+  "id": 1,
+  "email": "user@example.com",
+  "username": "alice"
 }
 ```
 
-### 通用响应格式
+### 错误响应
+
+错误时返回对应 HTTP 状态码和 `detail` 字段：
 
 ```json
 {
-  "code": 0,
-  "message": "success",
-  "data": {}
+  "detail": "Email or username already exists"
 }
 ```
 
-错误响应：
+常见状态码：
 
-```json
-{
-  "code": 40001,
-  "message": "参数错误",
-  "details": {
-    "field": "email",
-    "error": "邮箱格式不正确"
-  }
-}
-```
-
-### 错误码说明
-
-| 错误码 | 说明 |
+| 状态码 | 说明 |
 |--------|------|
-| 0 | 请求成功 |
-| 40001 | 请求参数错误 |
-| 40101 | 未认证或 Token 无效 |
-| 40102 | Token 已过期 |
-| 40301 | 权限不足 |
-| 40401 | 资源不存在 |
-| 40901 | 资源冲突（如重复注册） |
-| 42901 | 请求过于频繁 |
-| 50001 | 服务器内部错误 |
+| 200 | 请求成功 |
+| 400 | 请求参数错误（如无效的 agent_type） |
+| 401 | 未认证或 Token 无效 |
+| 403 | 无权限访问该资源 |
+| 404 | 资源不存在 |
+| 422 | 数据验证失败（如标题为空） |
+| 503 | AI 服务不可用 |
+| 504 | AI 服务请求超时 |
 
 ---
 
-## 1. 用户服务
+## 1. 认证 API
+
+路由前缀：`/api/auth`，对应文件 `services/api/routers/auth.py`
 
 ### 1.1 用户注册
 
 ```
-POST /auth/register
+POST /api/auth/register
 ```
 
 **请求体**：
-
-```json
-{
-  "email": "user@example.com",
-  "password": "SecurePass123!",
-  "name": "张三",
-  "role": "student"
-}
-```
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | email | string | 是 | 邮箱地址 |
-| password | string | 是 | 密码（8-32 位，需包含字母和数字） |
-| name | string | 是 | 用户昵称（2-20 字符） |
-| role | string | 否 | 角色（`student`/`teacher`/`admin`，默认 `student`） |
+| username | string | 是 | 用户名 |
+| password | string | 是 | 密码 |
+| display_name | string | 否 | 显示名称，默认取 username |
 
-**响应**：
-
-```json
-{
-  "code": 0,
-  "message": "注册成功",
-  "data": {
-    "user_id": "u_abc123",
-    "email": "user@example.com",
-    "name": "张三",
-    "role": "student",
-    "created_at": "2026-08-09T10:00:00Z"
-  }
-}
-```
-
-### 1.2 用户登录
-
-```
-POST /auth/login
-```
-
-**请求体**：
+**请求示例**：
 
 ```json
 {
   "email": "user@example.com",
-  "password": "SecurePass123!"
+  "username": "alice",
+  "password": "SecurePass123",
+  "display_name": "Alice"
 }
 ```
 
-**响应**：
+**响应**（200）：
 
 ```json
 {
-  "code": 0,
-  "message": "登录成功",
-  "data": {
-    "access_token": "eyJhbGciOiJIUzI1NiIs...",
-    "refresh_token": "eyJhbGciOiJIUzI1NiIs...",
-    "expires_in": 3600,
-    "token_type": "Bearer",
-    "user": {
-      "user_id": "u_abc123",
-      "email": "user@example.com",
-      "name": "张三",
-      "role": "student"
-    }
-  }
-}
-```
-
-### 1.3 刷新 Token
-
-```
-POST /auth/refresh
-```
-
-**请求体**：
-
-```json
-{
-  "refresh_token": "eyJhbGciOiJIUzI1NiIs..."
-}
-```
-
-**响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "access_token": "eyJhbGciOiJIUzI1NiIs...",
-    "expires_in": 3600
-  }
-}
-```
-
-### 1.4 获取当前用户信息
-
-```
-GET /users/me
-```
-
-**请求头**: `Authorization: Bearer <token>`
-
-**响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "user_id": "u_abc123",
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "token_type": "bearer",
+  "user": {
+    "id": 1,
     "email": "user@example.com",
-    "name": "张三",
-    "avatar_url": "https://cdn.eduflow.example.com/avatars/u_abc123.png",
-    "role": "student",
-    "bio": "热爱学习的学生",
-    "created_at": "2026-08-09T10:00:00Z",
-    "stats": {
-      "courses_in_progress": 3,
-      "courses_completed": 5,
-      "total_learning_hours": 120,
-      "total_assignments": 45
-    }
+    "username": "alice",
+    "display_name": "Alice",
+    "avatar_url": null,
+    "bio": null,
+    "is_active": true,
+    "is_verified": false,
+    "created_at": "2026-08-09T10:00:00+00:00"
   }
 }
 ```
 
-### 1.5 更新用户信息
+若邮箱或用户名已存在，返回 400。
+
+### 1.2 用户登录
 
 ```
-PUT /users/me
+POST /api/auth/login
 ```
-
-**请求头**: `Authorization: Bearer <token>`
 
 **请求体**：
-
-```json
-{
-  "name": "张三丰",
-  "bio": "终身学习者",
-  "avatar_url": "https://cdn.eduflow.example.com/avatars/new_avatar.png"
-}
-```
-
-### 1.6 获取用户列表（管理员）
-
-```
-GET /users?page=1&page_size=20&role=student&keyword=张三
-```
-
-**请求头**: `Authorization: Bearer <token>` (需 admin 角色)
-
-**参数**：
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| role | string | 否 | 按角色筛选 |
-| keyword | string | 否 | 按姓名/邮箱搜索 |
-| status | string | 否 | 按状态筛选 (`active`/`disabled`) |
-
----
-
-## 2. 课程服务
-
-### 2.1 创建课程
-
-```
-POST /courses
-```
-
-**请求头**: `Authorization: Bearer <token>` (需 teacher 或 admin 角色)
-
-**请求体**：
-
-```json
-{
-  "title": "Python 入门到精通",
-  "description": "从零开始学习 Python 编程语言，涵盖基础语法、数据结构、面向对象编程等核心内容。",
-  "category": "programming",
-  "tags": ["python", "编程入门", "后端开发"],
-  "cover_url": "https://cdn.eduflow.example.com/covers/python_course.png",
-  "difficulty": "beginner",
-  "price": 199.00,
-  "is_published": false
-}
-```
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| title | string | 是 | 课程标题（2-100 字符） |
-| description | string | 是 | 课程描述（10-2000 字符） |
-| category | string | 是 | 课程分类 |
-| tags | string[] | 否 | 标签列表 |
-| cover_url | string | 否 | 封面图片 URL |
-| difficulty | string | 是 | 难度 (`beginner`/`intermediate`/`advanced`) |
-| price | number | 是 | 价格（元），免费课程设为 0 |
-| is_published | boolean | 否 | 是否立即发布 |
+| email | string | 是 | 邮箱地址 |
+| password | string | 是 | 密码 |
 
-### 2.2 获取课程列表
+**响应**：与注册相同，返回 `access_token` 和 `user` 信息。凭据无效时返回 401。
+
+### 1.3 获取当前用户信息
 
 ```
-GET /courses?page=1&page_size=20&category=programming&difficulty=beginner&keyword=Python
+GET /api/auth/me
 ```
 
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| category | string | 否 | 分类筛选 |
-| difficulty | string | 否 | 难度筛选 |
-| keyword | string | 否 | 搜索关键词 |
-| sort_by | string | 否 | 排序方式 (`popular`/`newest`/`rating`) |
-| is_free | boolean | 否 | 仅显示免费课程 |
+**请求头**：`Authorization: Bearer <token>`
 
-### 2.3 获取课程详情
+**响应**：返回当前登录用户的完整信息（`_user_dict` 格式）。
+
+### 1.4 更新当前用户信息
 
 ```
-GET /courses/{course_id}
+PUT /api/auth/me
 ```
 
-### 2.4 更新课程
+**请求头**：`Authorization: Bearer <token>`
 
-```
-PUT /courses/{course_id}
-```
-
-**请求头**: `Authorization: Bearer <token>` (需课程创建者或 admin)
-
-### 2.5 删除课程
-
-```
-DELETE /courses/{course_id}
-```
-
-**请求头**: `Authorization: Bearer <token>` (需课程创建者或 admin)
-
-### 2.6 课程章节管理
-
-```
-# 获取课程章节列表
-GET /courses/{course_id}/chapters
-
-# 创建章节
-POST /courses/{course_id}/chapters
-{
-  "title": "第一章：Python 基础",
-  "description": "学习 Python 的基本语法和数据类型",
-  "sort_order": 1
-}
-
-# 更新章节
-PUT /courses/{course_id}/chapters/{chapter_id}
-
-# 删除章节
-DELETE /courses/{course_id}/chapters/{chapter_id}
-```
-
-### 2.7 课时管理
-
-```
-# 创建课时
-POST /courses/{course_id}/chapters/{chapter_id}/lessons
-{
-  "title": "1.1 变量和数据类型",
-  "type": "video",
-  "content": {
-    "video_url": "https://cdn.eduflow.example.com/videos/lesson_1_1.mp4",
-    "duration": 1800,
-    "resources": []
-  },
-  "sort_order": 1
-}
-```
+**请求体**（所有字段可选）：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| type | string | 课时类型 (`video`/`document`/`quiz`/`live`) |
-| content.video_url | string | 视频地址（视频类型） |
-| content.duration | integer | 时长（秒） |
-| content.resources | array | 附加资源列表 |
+| display_name | string \| null | 显示名称 |
+| avatar_url | string \| null | 头像 URL |
+| bio | string \| null | 个人简介 |
+
+**响应**：返回更新后的用户信息。
 
 ---
 
-## 3. 学习服务
+## 2. 学习路径与模块 API
 
-### 3.1 报名课程
+路由前缀：`/api/learning`，对应文件 `services/api/routers/learning.py`
+
+所有端点均需 `Authorization: Bearer <token>`，且只能操作当前用户拥有的资源。
+
+### 2.1 创建学习路径
 
 ```
-POST /enrollments
+POST /api/learning/paths
 ```
-
-**请求头**: `Authorization: Bearer <token>`
 
 **请求体**：
 
-```json
-{
-  "course_id": "c_xyz789"
-}
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| title | string | 是 | - | 路径标题（不能为空） |
+| description | string | 否 | `""` | 描述 |
+| goal | string | 否 | `""` | 学习目标 |
+| estimated_duration | integer | 否 | null | 预计时长 |
+| difficulty | string | 否 | `"beginner"` | 难度 |
+
+**响应**：返回创建的路径对象（含 `id`、`user_id`、`status`、`progress` 等字段）。
+
+### 2.2 获取学习路径列表
+
+```
+GET /api/learning/paths
 ```
 
-### 3.2 获取学习进度
+**响应**：返回当前用户的所有学习路径数组，按创建时间倒序排列。
+
+### 2.3 获取单个学习路径（含模块）
 
 ```
-GET /learning/progress/{course_id}
+GET /api/learning/paths/{path_id}
 ```
-
-**请求头**: `Authorization: Bearer <token>`
 
 **响应**：
 
 ```json
 {
-  "code": 0,
-  "message": "success",
-  "data": {
-    "course_id": "c_xyz789",
-    "course_title": "Python 入门到精通",
-    "overall_progress": 35.5,
-    "total_lessons": 40,
-    "completed_lessons": 14,
-    "total_duration": 72000,
-    "studied_duration": 25200,
-    "last_study_at": "2026-08-09T14:30:00Z",
-    "chapters": [
-      {
-        "chapter_id": "ch_001",
-        "title": "第一章：Python 基础",
-        "progress": 80,
-        "lessons": [
-          {
-            "lesson_id": "l_001",
-            "title": "1.1 变量和数据类型",
-            "completed": true,
-            "duration": 1800,
-            "studied_duration": 1800
-          }
-        ]
-      }
-    ]
-  }
+  "path": { "id": 1, "title": "...", "..." : "..." },
+  "modules": [ { "id": 1, "title": "...", "..." : "..." } ]
 }
 ```
 
-### 3.3 更新学习进度
+返回路径及其下所有模块（按 `order` 排序）。路径不存在返回 404，无权限返回 403。
+
+### 2.4 更新学习路径
 
 ```
-POST /learning/progress
+PUT /api/learning/paths/{path_id}
 ```
 
-**请求头**: `Authorization: Bearer <token>`
+**请求体**（所有字段可选）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| title | string \| null | 路径标题 |
+| description | string \| null | 描述 |
+| goal | string \| null | 学习目标 |
+| estimated_duration | integer \| null | 预计时长 |
+| difficulty | string \| null | 难度 |
+| status | string \| null | 状态 |
+
+**响应**：返回更新后的路径对象。
+
+### 2.5 删除学习路径
+
+```
+DELETE /api/learning/paths/{path_id}
+```
+
+级联删除该路径下的所有模块、练习会话和进度记录。
+
+**响应**：`{ "detail": "Path deleted" }`
+
+### 2.6 创建模块
+
+```
+POST /api/learning/modules
+```
 
 **请求体**：
 
-```json
-{
-  "course_id": "c_xyz789",
-  "lesson_id": "l_001",
-  "progress": 100,
-  "watched_duration": 1800
-}
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| path_id | integer | 是 | - | 所属路径 ID |
+| title | string | 是 | - | 模块标题（不能为空） |
+| description | string | 否 | `""` | 描述 |
+| order | integer | 否 | `0` | 排序序号 |
+| content | array | 否 | `[]` | 模块内容 |
+| estimated_minutes | integer | 否 | null | 预计学习分钟数 |
+
+创建模块后会自动重算所属路径的进度。
+
+### 2.7 获取单个模块
+
+```
+GET /api/learning/modules/{module_id}
 ```
 
-### 3.4 获取学习路径
+**响应**：返回模块对象。通过所属路径验证用户权限。
+
+### 2.8 更新模块
 
 ```
-GET /learning/path
+PUT /api/learning/modules/{module_id}
 ```
 
-**请求头**: `Authorization: Bearer <token>`
+**请求体**（所有字段可选）：
 
-**参数**：
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| title | string \| null | 模块标题 |
+| description | string \| null | 描述 |
+| order | integer \| null | 排序序号 |
+| content | array \| null | 模块内容 |
+| status | string \| null | 状态（not_started/in_progress/completed） |
+| estimated_minutes | integer \| null | 预计学习分钟数 |
 
-| 参数 | 类型 | 必填 | 说明 |
+更新 `status` 时会自动调整模块 `progress`：completed→100、in_progress→50、not_started→0，并重算路径进度。
+
+### 2.9 删除模块
+
+```
+DELETE /api/learning/modules/{module_id}
+```
+
+级联删除关联的练习会话和进度记录，并重算路径进度。
+
+**响应**：`{ "detail": "Module deleted" }`
+
+---
+
+## 3. 练习 API
+
+路由前缀：`/api/practice`，对应文件 `services/api/routers/practice.py`
+
+所有端点均需 `Authorization: Bearer <token>`。
+
+### 3.1 创建练习会话
+
+```
+POST /api/practice/sessions
+```
+
+**请求体**：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| module_id | integer | 否 | null | 关联模块 ID（提供时验证归属） |
+| session_type | string | 否 | `"quiz"` | 会话类型 |
+| topic | string | 否 | null | 练习主题 |
+| questions | array | 否 | `[]` | 题目列表 |
+
+**响应**：返回创建的会话对象（状态为 `in_progress`，分数为 0）。
+
+### 3.2 获取练习会话列表
+
+```
+GET /api/practice/sessions
+```
+
+**响应**：返回当前用户的所有练习会话，按开始时间倒序。
+
+### 3.3 获取单个练习会话
+
+```
+GET /api/practice/sessions/{session_id}
+```
+
+**响应**：返回会话对象（含 `questions`、`answers`、`score` 等）。会话不存在返回 404，无权限返回 403。
+
+### 3.4 删除练习会话
+
+```
+DELETE /api/practice/sessions/{session_id}
+```
+
+**响应**：`{ "detail": "Session deleted" }`
+
+### 3.5 提交答案
+
+```
+POST /api/practice/submit
+```
+
+**请求体**：
+
+| 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| goal | string | 否 | 学习目标描述 |
-| skill_level | string | 否 | 当前水平 (`beginner`/`intermediate`/`advanced`) |
+| session_id | integer | 是 | 会话 ID |
+| question_id | integer | 是 | 题目 ID |
+| answer | string | 是 | 用户答案 |
+| is_correct | boolean | 是 | 是否正确 |
+
+每次提交将答案追加到会话的 `answers` 列表，并实时更新会话 `score`（正确数/总数 * 100）。
 
 **响应**：
 
 ```json
 {
-  "code": 0,
-  "message": "success",
-  "data": {
-    "goal": "掌握 Python 全栈开发",
-    "estimated_duration": "6 个月",
-    "path": [
-      {
-        "course_id": "c_001",
-        "title": "Python 入门到精通",
-        "order": 1,
-        "estimated_hours": 40,
-        "prerequisites": []
-      },
-      {
-        "course_id": "c_002",
-        "title": "Web 开发基础",
-        "order": 2,
-        "estimated_hours": 60,
-        "prerequisites": ["c_001"]
-      }
-    ]
-  }
+  "score": 75.0,
+  "total": 4,
+  "correct": 3
+}
+```
+
+### 3.6 完成练习会话
+
+```
+PUT /api/practice/sessions/{session_id}/complete
+```
+
+**请求体**：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| weak_points | string[] | `[]` | 薄弱知识点 |
+| strong_points | string[] | `[]` | 掌握知识点 |
+
+完成会话时：计算最终得分、设置状态为 `completed`、记录完成时间。根据是否达到及格线（`PASS_SCORE_THRESHOLD = 60`）更新关联模块状态。若关联模块，还会创建或更新 `Progress` 记录（合并测验成绩与知识点），并重算路径进度。
+
+**响应**：
+
+```json
+{
+  "session": { "id": 1, "status": "completed", "score": 80.0, "..." : "..." },
+  "passed": true,
+  "pass_threshold": 60,
+  "score": 80.0
 }
 ```
 
 ---
 
-## 4. 评估服务
+## 4. 进度 API
 
-### 4.1 创建测验
+路由前缀：`/api/progress`，对应文件 `services/api/routers/progress.py`
 
-```
-POST /assessments/quizzes
-```
+所有端点均需 `Authorization: Bearer <token>`。
 
-**请求头**: `Authorization: Bearer <token>` (需 teacher 或 admin)
-
-### 4.2 提交测验答案
+### 4.1 获取我的学习进度
 
 ```
-POST /assessments/quizzes/{quiz_id}/submit
+GET /api/progress/me
 ```
 
-**请求头**: `Authorization: Bearer <token>`
-
-**请求体**：
+**响应**：返回当前用户所有模块的进度详情，包含模块标题。
 
 ```json
 {
-  "answers": [
+  "user_id": 1,
+  "module_count": 3,
+  "details": [
     {
-      "question_id": "q_001",
-      "answer": "A"
-    },
-    {
-      "question_id": "q_002",
-      "answer": "Python 是一种解释型、面向对象的高级编程语言。"
+      "id": 1,
+      "module_id": 5,
+      "module_title": "Python 基础",
+      "learning_time_minutes": 120,
+      "completion_percentage": 100.0,
+      "quiz_scores": [{ "session_id": 1, "score": 85.0, "passed": true }],
+      "weak_points": ["递归"],
+      "strong_points": ["循环"],
+      "updated_at": "2026-08-09T14:00:00+00:00"
     }
   ]
 }
 ```
 
-### 4.3 获取测验结果
+### 4.2 更新学习进度
 
 ```
-GET /assessments/quizzes/{quiz_id}/results
-```
-
-**请求头**: `Authorization: Bearer <token>`
-
-### 4.4 获取作业列表
-
-```
-GET /assessments/assignments?course_id={course_id}
-```
-
-**请求头**: `Authorization: Bearer <token>`
-
-### 4.5 提交作业
-
-```
-POST /assessments/assignments/{assignment_id}/submit
-```
-
-**请求头**: `Authorization: Bearer <token>`
-
-**请求体**：
-
-```json
-{
-  "content": {
-    "text": "这是我的作业答案...",
-    "code": "def hello():\n    print('Hello, World!')\n",
-    "files": [
-      {
-        "filename": "main.py",
-        "url": "https://cdn.eduflow.example.com/submissions/main.py"
-      }
-    ]
-  }
-}
-```
-
----
-
-## 5. AI 智能体服务
-
-### 5.1 智能问答
-
-```
-POST /agents/qa/ask
-```
-
-**请求头**: `Authorization: Bearer <token>`
-
-**请求体**：
-
-```json
-{
-  "course_id": "c_xyz789",
-  "question": "Python 中的列表推导式是如何工作的？",
-  "context": {
-    "current_lesson": "l_005",
-    "history": [
-      {"role": "user", "content": "什么是 Python 列表？"},
-      {"role": "assistant", "content": "列表是 Python 中一种有序、可变的数据集合..."}
-    ]
-  }
-}
-```
-
-**响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "answer": "列表推导式（List Comprehension）是 Python 中一种简洁的创建列表的方式...",
-    "references": [
-      {
-        "title": "Python 列表推导式",
-        "source": "course:chapter_1",
-        "relevance": 0.95
-      }
-    ],
-    "related_questions": [
-      "字典推导式如何使用？",
-      "列表推导式和 map() 函数的区别？"
-    ],
-    "conversation_id": "conv_abc123"
-  }
-}
-```
-
-### 5.2 继续对话
-
-```
-POST /agents/qa/ask
+POST /api/progress/update
 ```
 
 **请求体**：
 
-```json
-{
-  "conversation_id": "conv_abc123",
-  "question": "能给我举几个实际的例子吗？"
-}
-```
-
-### 5.3 获取学习路径规划
-
-```
-POST /agents/learning-path/plan
-```
-
-**请求头**: `Authorization: Bearer <token>`
-
-**请求体**：
-
-```json
-{
-  "goal": "成为一名 Python 全栈工程师",
-  "current_level": "beginner",
-  "available_hours_per_week": 10,
-  "preferred_style": "video",
-  "deadline": "2027-02-01"
-}
-```
-
-### 5.4 提交 AI 批改作业
-
-```
-POST /agents/assignment/grade
-```
-
-**请求头**: `Authorization: Bearer <token>`
-
-**请求体**：
-
-```json
-{
-  "assignment_id": "a_001",
-  "student_answer": "def hello():\n    print('Hello, World!')",
-  "rubric": {
-    "criteria": ["代码正确性", "代码风格", "注释完整性"],
-    "max_score": 100
-  }
-}
-```
-
-**响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "total_score": 85,
-    "breakdown": [
-      {"criterion": "代码正确性", "score": 40, "max_score": 40, "comment": "代码逻辑正确，功能完整"},
-      {"criterion": "代码风格", "score": 30, "max_score": 35, "comment": "建议使用更多类型注解"},
-      {"criterion": "注释完整性", "score": 15, "max_score": 25, "comment": "缺少函数文档字符串"}
-    ],
-    "detailed_feedback": "整体完成度较高...",
-    "suggestions": [
-      "建议为函数添加 docstring",
-      "建议使用类型注解增强代码可读性"
-    ],
-    "weak_knowledge_points": ["函数文档规范", "类型注解"]
-  }
-}
-```
-
-### 5.5 获取学习分析报告
-
-```
-POST /agents/analytics/report
-```
-
-**请求头**: `Authorization: Bearer <token>`
-
-**请求体**：
-
-```json
-{
-  "report_type": "personal",
-  "time_range": {
-    "start": "2026-07-01",
-    "end": "2026-08-09"
-  }
-}
-```
-
-**响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "summary": {
-      "total_learning_hours": 45,
-      "courses_completed": 2,
-      "courses_in_progress": 3,
-      "avg_daily_hours": 1.5
-    },
-    "knowledge_map": {
-      "mastered": ["Python 基础语法", "数据结构"],
-      "learning": ["面向对象编程", "文件操作"],
-      "weak": ["异步编程", "网络编程"]
-    },
-    "trends": {
-      "weekly_hours": [10, 8, 12, 5, 10],
-      "completion_rate": [80, 75, 90, 60, 85]
-    },
-    "recommendations": [
-      "建议每天保持 1-2 小时的学习时间",
-      "薄弱知识点「异步编程」建议复习"
-    ]
-  }
-}
-```
-
----
-
-## 6. 通知服务
-
-### 6.1 获取通知列表
-
-```
-GET /notifications?page=1&page_size=20&type=system&unread_only=true
-```
-
-**请求头**: `Authorization: Bearer <token>`
-
-### 6.2 标记通知已读
-
-```
-PUT /notifications/{notification_id}/read
-```
-
-### 6.3 标记全部已读
-
-```
-PUT /notifications/read-all
-```
-
----
-
-## 7. 搜索服务
-
-### 7.1 全局搜索
-
-```
-GET /search?q=Python&type=course&page=1&page_size=20
-```
-
-| 参数 | 类型 | 必填 | 说明 |
+| 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| q | string | 是 | 搜索关键词 |
-| type | string | 否 | 搜索类型 (`course`/`lesson`/`user`/`all`) |
-| sort | string | 否 | 排序方式 (`relevance`/`rating`/`date`) |
+| module_id | integer | 是 | 模块 ID（验证归属） |
+| learning_time_minutes | integer | 否 | 学习时长（分钟） |
+| completion_percentage | float | 否 | 完成百分比 |
+| quiz_scores | array | 否 | 测验成绩列表 |
+| weak_points | string[] | 否 | 薄弱知识点 |
+| strong_points | string[] | 否 | 掌握知识点 |
+
+若进度记录不存在则创建，存在则更新对应字段。
+
+**响应**：返回更新后的进度记录。
+
+### 4.3 获取进度概览
+
+```
+GET /api/progress/overview
+```
+
+**响应**：返回当前用户的学习进度全局概览：
+
+```json
+{
+  "user_id": 1,
+  "module_count": 3,
+  "total_learning_time_minutes": 240,
+  "overall_completion": 66.7,
+  "weak_points": ["递归", "异步"],
+  "strong_points": ["循环", "函数"],
+  "module_details": [
+    {
+      "module_id": 5,
+      "module_title": "Python 基础",
+      "path_title": "Python 学习路径",
+      "module_status": "completed",
+      "module_progress": 100.0,
+      "learning_time_minutes": 120,
+      "completion_percentage": 100.0,
+      "quiz_scores": [],
+      "weak_points": [],
+      "strong_points": [],
+      "updated_at": "2026-08-09T14:00:00+00:00"
+    }
+  ]
+}
+```
 
 ---
 
-## 8. 健康检查
+## 5. AI 代理 API（API 服务）
 
-### 8.1 服务健康状态
+路由前缀：`/api/ai`，对应文件 `services/api/routers/ai.py`
+
+这些端点在 API 服务中作为代理，鉴权后将请求转发至 AI 服务（端口 8100）。所有端点均需 `Authorization: Bearer <token>`。转发超时为 60 秒，AI 服务不可用时返回 503，超时返回 504。
+
+### 5.1 AI 对话
 
 ```
-GET /health
+POST /api/ai/chat
+```
+
+**请求体**：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| message | string | - | 用户消息 |
+| context | object | `{}` | 上下文信息 |
+| agent_type | string | `"tutor"` | 智能体类型（tutor / buddy） |
+
+转发至 AI 服务 `POST /api/agents/chat`，并附加 `user_id`。
+
+### 5.2 生成练习题
+
+```
+POST /api/ai/generate-questions
+```
+
+**请求体**：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| topic | string | - | 出题主题 |
+| difficulty | string | `"medium"` | 难度 |
+| count | integer | `5` | 题目数量 |
+| context | string \| object \| null | null | 附加上下文 |
+
+转发至 AI 服务 `POST /api/agents/generate-questions`。
+
+### 5.3 概念解释
+
+```
+POST /api/ai/explain
+```
+
+**请求体**：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| concept | string | - | 概念名称 |
+| context | object \| null | null | 附加上下文 |
+| detail_level | string | `"beginner"` | 学习者水平（通过 alias 映射为 AI 服务的 `level`） |
+
+转发至 AI 服务 `POST /api/agents/explain`。
+
+### 5.4 评估答案
+
+```
+POST /api/ai/evaluate
+```
+
+**请求体**：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| question | string | - | 题目内容 |
+| user_answer | string | - | 学生答案 |
+| correct_answer | string | `""` | 正确答案（合并进 context 转发） |
+| context | string \| object \| null | null | 附加上下文 |
+
+转发至 AI 服务 `POST /api/agents/evaluate`，`correct_answer` 会合并进 `context` 后转发。
+
+### 5.5 学习路径规划
+
+```
+POST /api/ai/plan
+```
+
+**请求体**：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| goal | string | - | 学习目标 |
+| level | string | `"beginner"` | 当前水平 |
+| duration_weeks | integer | `12` | 计划周期（周） |
+| difficulty | string | `"medium"` | 难度（映射到 preferences） |
+| context | object \| null | null | 附加上下文（映射到 preferences） |
+
+转发至 AI 服务 `POST /api/agents/plan`，`difficulty` 和 `context` 会映射为 `preferences`。
+
+---
+
+## 6. AI 服务 API（端口 8100）
+
+对应文件 `services/ai/main.py`。AI 服务直接暴露智能体接口，可被 API 服务代理调用，也可直接访问。
+
+### 6.1 健康检查
+
+```
+GET /api/health
 ```
 
 **响应**：
@@ -818,31 +600,338 @@ GET /health
 ```json
 {
   "status": "ok",
+  "service": "EduFlow AI Service",
   "version": "0.1.0",
-  "timestamp": "2026-08-09T12:00:00Z",
-  "services": {
-    "database": "ok",
-    "redis": "ok",
-    "rabbitmq": "ok",
-    "milvus": "ok",
-    "llm": "ok"
-  }
+  "timestamp": "2026-08-09T12:00:00+00:00",
+  "llm_available": true,
+  "config": {
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "api_port": 8001,
+    "debug": false
+  },
+  "agents": [
+    { "name": "tutor", "type": "chat", "description": "苏格拉底式智能导师" },
+    { "name": "buddy", "type": "chat", "description": "学习伙伴式对话" },
+    { "name": "examiner", "type": "tool", "description": "出题与答案评估" },
+    { "name": "planner", "type": "tool", "description": "学习路径规划与调整" }
+  ],
+  "endpoints": [
+    "POST /api/agents/chat",
+    "POST /api/agents/explain",
+    "POST /api/agents/discuss",
+    "POST /api/agents/generate-questions",
+    "POST /api/agents/evaluate",
+    "POST /api/agents/plan",
+    "POST /api/agents/adjust-plan"
+  ]
+}
+```
+
+### 6.2 智能体对话
+
+```
+POST /api/agents/chat
+```
+
+**请求体**：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| message | string | - | 用户消息 |
+| agent_type | string | `"tutor"` | 智能体类型（tutor / buddy），无效值返回 400 |
+| context | object | `{}` | 上下文信息 |
+
+**响应**：
+
+```json
+{
+  "response": "让我们一步步来思考...",
+  "agent_type": "tutor",
+  "llm_available": true
+}
+```
+
+### 6.3 概念解释
+
+```
+POST /api/agents/explain
+```
+
+**请求体**：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| concept | string | - | 概念名称 |
+| context | object \| null | null | 附加上下文 |
+| level | string | `"beginner"` | 学习者水平 |
+
+**响应**：`{ "response": "...", "concept": "...", "level": "...", "llm_available": true }`
+
+### 6.4 话题讨论
+
+```
+POST /api/agents/discuss
+```
+
+**请求体**：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| topic | string | - | 讨论话题 |
+| context | object \| null | null | 附加上下文 |
+
+**响应**：`{ "response": "...", "topic": "...", "llm_available": true }`
+
+### 6.5 生成练习题
+
+```
+POST /api/agents/generate-questions
+```
+
+**请求体**：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| topic | string | - | 出题主题 |
+| difficulty | string | `"medium"` | 难度 |
+| count | integer | `5` | 题目数量 |
+| context | string \| object \| null | `""` | 附加上下文 |
+
+**响应**：
+
+```json
+{
+  "questions": [
+    {
+      "id": 1,
+      "question": "下列哪个选项是 Python 中合法的变量名？",
+      "options": ["2variable", "_username", "class", "my-var"],
+      "answer": "1",
+      "explanation": "...",
+      "difficulty": "easy",
+      "topic": "Python 基础"
+    }
+  ],
+  "count": 5,
+  "topic": "Python 基础",
+  "difficulty": "medium",
+  "llm_available": true
+}
+```
+
+### 6.6 评估答案
+
+```
+POST /api/agents/evaluate
+```
+
+**请求体**：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| question | string | - | 题目内容 |
+| user_answer | string | - | 学生答案 |
+| context | string \| object \| null | null | 上下文（可含 correct_answer） |
+
+**响应**：
+
+```json
+{
+  "is_correct": true,
+  "score": 100,
+  "feedback": "回答正确！",
+  "hint": "可以尝试用自己的语言复述这个知识点。",
+  "llm_available": true
+}
+```
+
+### 6.7 学习路径规划
+
+```
+POST /api/agents/plan
+```
+
+**请求体**：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| goal | string | - | 学习目标 |
+| level | string | `"beginner"` | 当前水平 |
+| duration_weeks | integer | `12` | 计划周期（周） |
+| preferences | list \| object \| string \| null | null | 学习偏好 |
+
+**响应**：
+
+```json
+{
+  "plan": {
+    "title": "「Python 全栈」入门学习路径",
+    "description": "...",
+    "estimated_duration": "12 周",
+    "milestones": [{ "title": "...", "estimated_hours": 24, "order": 1 }],
+    "modules": [{ "title": "...", "estimated_minutes": 240, "topics": [] }]
+  },
+  "goal": "掌握 Python 全栈开发",
+  "level": "beginner",
+  "llm_available": true
+}
+```
+
+### 6.8 调整学习计划
+
+```
+POST /api/agents/adjust-plan
+```
+
+**请求体**：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| feedback | string | - | 学生反馈内容 |
+| current_plan | object | `{}` | 当前学习计划 |
+
+**响应**：`{ "plan": { ... }, "feedback": "...", "llm_available": true }`
+
+---
+
+## 7. Engine 服务 API（端口 8200）
+
+对应文件 `services/engine/main.py`。提供学习科学算法能力。
+
+### 7.1 健康检查
+
+```
+GET /api/health
+```
+
+**响应**：`{ "status": "ok", "service": "EduFlow Engine" }`
+
+### 7.2 计算下次复习时间
+
+```
+POST /api/engine/next-review
+```
+
+使用 FSRS 启发的间隔重复算法，基于知识掌握度、复习次数和上次得分计算最优复习间隔。
+
+**请求体**：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| knowledge_state | object | - | 知识状态 |
+| desired_retention | float | `0.9` | 期望保留率 |
+
+`knowledge_state` 对象：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| user_id | integer | - | 用户 ID |
+| topic | string | - | 主题 |
+| mastery_level | float | `0.0` | 掌握度（0-1） |
+| review_count | integer | `0` | 复习次数 |
+| last_review_score | float \| null | null | 上次得分 |
+| time_since_last_review_hours | float | `0.0` | 距上次复习小时数 |
+
+**响应**：
+
+```json
+{
+  "next_review_hours": 48.5,
+  "predicted_retention": 0.85,
+  "stability": 3.5,
+  "difficulty": 0.4,
+  "recommended": "review_now"
+}
+```
+
+`recommended` 为 `"review_now"`（保留率低于期望值）或 `"skip"`。
+
+### 7.3 知识追踪
+
+```
+POST /api/engine/knowledge-tracing
+```
+
+分析多个主题的知识状态，识别薄弱点。
+
+**请求体**：`KnowledgeState` 对象数组（同 7.2 的 `knowledge_state`）。
+
+**响应**：
+
+```json
+{
+  "topics": [
+    { "topic": "递归", "mastery": 30.0, "status": "weak", "reviews_done": 2 },
+    { "topic": "循环", "mastery": 85.0, "status": "mastered", "reviews_done": 5 }
+  ],
+  "weak_points": ["递归"],
+  "overall_mastery": 57.5,
+  "total_topics": 2
+}
+```
+
+状态判定：`mastered`（≥80%）、`learning`（≥40%）、`weak`（<40%）。掌握度低于 0.6 的主题会被标记为薄弱点（最多返回 5 个）。
+
+### 7.4 估算学习时长
+
+```
+POST /api/engine/estimate-duration
+```
+
+**请求参数**（query/form）：
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| topic | string | - | 主题 |
+| difficulty | string | `"medium"` | 难度（beginner/easy/medium/hard/expert） |
+| depth | string | `"standard"` | 深度（overview/standard/deep） |
+
+基础时长按难度：beginner=30、easy=45、medium=60、hard=90、expert=120（分钟），再乘以深度系数：overview=0.5、standard=1.0、deep=2.0。
+
+**响应**：
+
+```json
+{
+  "topic": "递归",
+  "estimated_minutes": 120,
+  "difficulty": "hard",
+  "depth": "deep"
 }
 ```
 
 ---
 
-## API 速率限制
+## 8. 健康检查端点汇总
 
-| 接口分类 | 限制 | 说明 |
-|----------|------|------|
-| 通用 API | 100 次/分钟 | 按用户 ID 限制 |
-| AI 智能体 API | 20 次/分钟 | 按用户 ID 限制 |
-| 认证 API | 5 次/分钟 | 按 IP 限制 |
-| 搜索 API | 30 次/分钟 | 按用户 ID 限制 |
+| 服务 | 端点 | 端口 |
+|------|------|------|
+| API 服务 | `GET http://localhost:8000/api/health` | 8000 |
+| AI 服务 | `GET http://localhost:8100/api/health` | 8100 |
+| Engine 服务 | `GET http://localhost:8200/api/health` | 8200 |
 
-超出限制时返回 `429 Too Many Requests`。
+API 服务健康检查响应：
+
+```json
+{
+  "status": "ok",
+  "version": "0.1.0",
+  "service": "EduFlow API"
+}
+```
 
 ---
 
-> 完整 API 文档请参考 OpenAPI 规范文件：`docs/api-spec/openapi.yaml`。
+## 9. 前端 API 客户端
+
+前端通过 `apps/web/src/lib/api.ts` 调用上述接口，主要导出以下 API 模块：
+
+| 模块 | 说明 |
+|------|------|
+| `authAPI` | 登录、注册、获取/更新用户信息 |
+| `learningAPI` | 学习路径与模块的 CRUD |
+| `practiceAPI` | 练习会话管理、提交答案、完成会话 |
+| `progressAPI` | 获取进度、更新进度、概览 |
+| `aiAPI` | AI 对话、出题、解释、评估、规划 |
+
+所有请求经统一 `request()` 方法处理，自动附加 JWT Token、解析错误响应并抛出 `ApiError`。

@@ -1,9 +1,0 @@
-{
-  "name": "@eduflow/engine",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "dev": "uvicorn main:app --reload --port 8200",
-    "start": "uvicorn main:app --port 8200"
-  }
-}

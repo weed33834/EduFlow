@@ -2,10 +2,10 @@ export interface User {
   id: number
   email: string
   username: string
-  displayName: string
-  avatarUrl?: string
+  display_name: string
+  avatar_url?: string
   bio?: string
-  createdAt: string
+  created_at: string
 }
 
 export interface LearningPath {
@@ -13,22 +13,22 @@ export interface LearningPath {
   title: string
   description: string
   goal: string
-  difficulty: 'beginner' | 'easy' | 'medium' | 'hard'
-  status: 'active' | 'paused' | 'completed'
+  difficulty: 'beginner' | 'easy' | 'medium' | 'hard' | 'expert'
+  status: 'not_started' | 'in_progress' | 'completed'
   progress: number
   modules: Module[]
-  createdAt: string
+  created_at: string
 }
 
 export interface Module {
   id: number
-  pathId: number
+  path_id: number
   title: string
   description: string
   order: number
-  status: 'pending' | 'in_progress' | 'completed'
+  status: 'not_started' | 'in_progress' | 'completed'
   progress: number
-  estimatedMinutes: number
+  estimated_minutes: number
   content: ContentItem[]
 }
 
@@ -40,12 +40,12 @@ export interface ContentItem {
 
 export interface PracticeSession {
   id: number
-  moduleId: number
-  type: 'quiz' | 'challenge' | 'review'
+  module_id: number
+  session_type: 'quiz' | 'challenge' | 'review'
   questions: Question[]
   score: number
   status: 'in_progress' | 'completed'
-  startedAt: string
+  started_at: string
 }
 
 export interface Question {
@@ -58,13 +58,13 @@ export interface Question {
 }
 
 export interface Progress {
-  userId: number
-  moduleId: number
-  learningTimeMinutes: number
-  completionPercentage: number
-  quizScores: number[]
-  weakPoints: string[]
-  strongPoints: string[]
+  user_id: number
+  module_id: number
+  learning_time_minutes: number
+  completion_percentage: number
+  quiz_scores: number[]
+  weak_points: string[]
+  strong_points: string[]
 }
 
 export interface AIAgent {
@@ -76,13 +76,13 @@ export interface AIAgent {
 export interface AIMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
-  agentType?: string
+  agent_type?: string
 }
 
 export interface KnowledgeState {
   topic: string
-  masteryLevel: number
-  reviewCount: number
-  lastReviewScore: number | null
-  timeSinceLastReviewHours: number
+  mastery_level: number
+  review_count: number
+  last_review_score: number | null
+  time_since_last_review_hours: number
 }

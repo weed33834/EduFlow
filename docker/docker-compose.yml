@@ -37,6 +37,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://eduflow:eduflow@postgres:5432/eduflow
       REDIS_URL: redis://redis:6379/0
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AI_SERVICE_URL: http://ai-service:8100
     depends_on:
       postgres:
         condition: service_healthy
@@ -56,10 +57,17 @@ services:
       redis:
         condition: service_healthy
 
+  engine:
+    build:
+      context: ../services/engine
+      dockerfile: Dockerfile
+    ports:
+      - "8200:8200"
+
   web:
     build:
-      context: ../apps/web
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: apps/web/Dockerfile
     ports:
       - "3000:3000"
     environment:

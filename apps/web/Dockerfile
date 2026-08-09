@@ -1,10 +1,23 @@
 FROM node:20-alpine
 
-WORKDIR /app
-COPY package.json .
-RUN npm install
+RUN npm install -g pnpm
 
+WORKDIR /app
+
+# Copy monorepo config files
+COPY package.json pnpm-workspace.yaml ./
+COPY apps/web/package.json ./apps/web/
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/ui/package.json ./packages/ui/
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile
+
+# Copy source code
 COPY . .
-RUN npm run build
+
+# Build the web app
+RUN pnpm --filter @eduflow/web build
+
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["pnpm", "--filter", "@eduflow/web", "start"]

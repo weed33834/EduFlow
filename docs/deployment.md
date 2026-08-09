@@ -1,576 +1,532 @@
 # 部署文档
 
-> 文档版本: v1.0 | 最后更新: 2026-08-09
+> 文档版本: v2.0 | 最后更新: 2026-08-09
 
 ---
 
 ## 目录
 
 1. [部署方式概览](#1-部署方式概览)
-2. [Docker 部署](#2-docker-部署)
+2. [Docker Compose 部署](#2-docker-compose-部署)
 3. [手动部署](#3-手动部署)
-4. [Kubernetes 部署](#4-kubernetes-部署)
-5. [环境变量说明](#5-环境变量说明)
-6. [数据库迁移](#6-数据库迁移)
-7. [监控与维护](#7-监控与维护)
+4. [端口说明](#4-端口说明)
+5. [环境变量配置](#5-环境变量配置)
+6. [健康检查](#6-健康检查)
+7. [常见问题排查](#7-常见问题排查)
 
 ---
 
 ## 1. 部署方式概览
 
-EduFlow 畅学 支持以下三种部署方式：
+EduFlow 畅学支持两种部署方式：
 
 | 部署方式 | 适用场景 | 复杂度 | 推荐用途 |
 |----------|----------|--------|----------|
-| Docker Compose | 开发环境 / 小型部署 | 低 | 本地开发、测试、演示 |
-| 手动部署 | 自定义环境 | 中 | 特殊网络环境、定制化部署 |
-| Kubernetes | 生产环境 / 大规模部署 | 高 | 线上正式环境、弹性伸缩 |
+| Docker Compose | 一键启动全部服务 | 低 | 本地开发、测试、生产部署 |
+| 手动部署 | 灵活控制各服务 | 中 | 本地开发、调试、自定义环境 |
 
 ---
 
-## 2. Docker 部署
+## 2. Docker Compose 部署
 
 ### 2.1 前置要求
 
 - Docker >= 20.10
 - Docker Compose >= 2.0
-- 至少 4 GB 可用内存（推荐 8 GB）
-- 至少 20 GB 可用磁盘空间
+- 至少 2 GB 可用内存
 
-### 2.2 快速部署（推荐）
+### 2.2 服务架构
+
+Docker Compose 配置文件位于 `docker/docker-compose.yml`，包含以下六个服务：
+
+| 服务 | 镜像/构建 | 端口 | 依赖 |
+|------|-----------|------|------|
+| postgres | postgres:16-alpine | 5432 | - |
+| redis | redis:7-alpine | 6379 | - |
+| api | 构建（services/api） | 8000 | postgres, redis |
+| ai-service | 构建（services/ai） | 8100 | redis |
+| engine | 构建（services/engine） | 8200 | - |
+| web | 构建（apps/web） | 3000 | api |
+
+### 2.3 一键启动
 
 ```bash
-# 1. 克隆项目
-git clone https://github.com/your-org/eduflow.git
-cd eduflow
+# 1. 进入 docker 目录
+cd docker
 
-# 2. 复制环境变量配置
-cp .env.example .env
-# 编辑 .env 文件，修改必要的配置项（详见环境变量说明章节）
+# 2. （可选）配置 OPENAI_API_KEY 启用完整 AI 能力
+export OPENAI_API_KEY="sk-your-api-key"
 
 # 3. 启动所有服务
 docker-compose up -d
 
-# 4. 初始化数据库
-docker-compose exec backend alembic upgrade head
+# 4. 查看服务状态
+docker-compose ps
 
-# 5. 导入初始数据
-docker-compose exec backend python scripts/seed_data.py
-
-# 6. 验证部署
-curl http://localhost:8000/api/v1/health
+# 5. 查看日志
+docker-compose logs -f
 ```
 
-### 2.3 服务组件
+启动后，API 服务会在启动时自动创建数据库表（通过 `Base.metadata.create_all`），无需手动执行迁移。
+
+### 2.4 完整 docker-compose.yml
 
 ```yaml
-# docker-compose.yml 主要服务组件
+version: '3.8'
+
 services:
-  # API 网关
-  kong:
-    image: kong:3.5
-    ports:
-      - "8000:8000"   # 对外 API 端口
-      - "8001:8001"   # Kong Admin API
-
-  # 后端服务
-  backend:
-    build: ./backend
-    env_file: .env
-    depends_on:
-      - postgres
-      - redis
-      - rabbitmq
-
-  # AI 智能体服务
-  ai-agent:
-    build: ./ai-agent
-    env_file: .env
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-
-  # 前端服务
-  frontend:
-    build: ./frontend
-    ports:
-      - "3000:3000"
-    env_file: .env
-
-  # 基础设施
   postgres:
-    image: postgres:15
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: eduflow
+      POSTGRES_PASSWORD: eduflow
+      POSTGRES_DB: eduflow
+    ports:
+      - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eduflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
-  milvus:
-    image: milvusdb/milvus:v2.3.0
+  api:
+    build:
+      context: ../services/api
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://eduflow:eduflow@postgres:5432/eduflow
+      REDIS_URL: redis://redis:6379/0
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AI_SERVICE_URL: http://ai-service:8100
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
-  rabbitmq:
-    image: rabbitmq:3.12-management
+  ai-service:
+    build:
+      context: ../services/ai
+      dockerfile: Dockerfile
+    ports:
+      - "8100:8100"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  engine:
+    build:
+      context: ../services/engine
+      dockerfile: Dockerfile
+    ports:
+      - "8200:8200"
+
+  web:
+    build:
+      context: ../apps/web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:8000
+      NEXT_PUBLIC_AI_API_URL: http://ai-service:8100
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
 ```
 
-### 2.4 部分启动
+### 2.5 关键配置说明
 
-如果只需要启动部分服务（例如仅启动后端及依赖的基础设施），可以使用：
+- **postgres**：使用 `postgres:16-alpine` 轻量镜像，用户名/密码/数据库名均为 `eduflow`，数据持久化到 `pgdata` 卷。配置了 `pg_isready` 健康检查。
+- **redis**：使用 `redis:7-alpine`，配置了 `redis-cli ping` 健康检查。
+- **api**：通过 `DATABASE_URL` 连接 PostgreSQL（`postgresql+asyncpg`），通过 `AI_SERVICE_URL` 指向 AI 服务。依赖 postgres 和 redis 的健康检查通过后才启动。
+- **ai-service**：依赖 redis 健康检查。`OPENAI_API_KEY` 为空时自动启用降级模式。
+- **engine**：无外部依赖，独立运行。
+- **web**：依赖 api 服务，通过 `NEXT_PUBLIC_API_URL` 和 `NEXT_PUBLIC_AI_API_URL` 配置后端地址。
 
-```bash
-# 仅启动后端相关服务
-docker-compose up -d postgres redis rabbitmq milvus backend
-
-# 仅启动 AI 智能体服务
-docker-compose up -d postgres redis milvus rabbitmq ai-agent
-
-# 仅启动前端
-docker-compose up -d frontend
-```
-
-### 2.5 常用 Docker 命令
+### 2.6 常用 Docker 命令
 
 ```bash
+# 启动所有服务（后台）
+docker-compose up -d
+
+# 启动并重新构建镜像
+docker-compose up -d --build
+
+# 仅启动部分服务
+docker-compose up -d postgres redis api
+docker-compose up -d ai-service
+docker-compose up -d engine
+
 # 查看服务状态
 docker-compose ps
 
-# 查看日志
-docker-compose logs -f backend
+# 查看指定服务日志
+docker-compose logs -f api
+docker-compose logs -f ai-service
+docker-compose logs -f web
 
-# 重启服务
-docker-compose restart backend
-
-# 重新构建并启动
-docker-compose up -d --build backend
+# 重启指定服务
+docker-compose restart api
 
 # 停止所有服务
 docker-compose down
 
-# 停止并删除数据卷
+# 停止并删除数据卷（清除数据库数据）
 docker-compose down -v
 ```
+
+### 2.7 访问服务
+
+启动完成后，可通过以下地址访问各服务：
+
+| 服务 | 访问地址 |
+|------|----------|
+| Web 前端 | http://localhost:3000 |
+| API 服务 | http://localhost:8000 |
+| AI 服务 | http://localhost:8100 |
+| Engine 服务 | http://localhost:8200 |
+| PostgreSQL | localhost:5432 |
+| Redis | localhost:6379 |
 
 ---
 
 ## 3. 手动部署
 
+适用于本地开发或需要单独调试某个服务的场景。
+
 ### 3.1 前置要求
 
-- Python >= 3.11
+- Python >= 3.12
 - Node.js >= 18.0.0
 - pnpm >= 8.0.0
-- PostgreSQL >= 15
-- Redis >= 7.0
-- RabbitMQ >= 3.12
-- Milvus >= 2.3.0
-- Nginx >= 1.24
+- Redis >= 7.0（可选，AI 服务和 API 服务可配置）
+- PostgreSQL >= 16（生产环境，开发可用 SQLite）
 
-### 3.2 后端部署
+### 3.2 启动 API 服务
 
 ```bash
-# 1. 进入后端目录
-cd backend
+# 1. 进入 API 服务目录
+cd services/api
+
+# 2. 创建虚拟环境并安装依赖
+python -m venv venv
+source venv/bin/activate    # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+
+# 3. 配置环境变量（可选，开发默认使用 SQLite）
+# 创建 .env 文件或通过环境变量配置
+# DATABASE_URL=sqlite+aiosqlite:///./eduflow.db
+# AI_SERVICE_URL=http://localhost:8100
+# SECRET_KEY=your-secret-key
+
+# 4. 启动开发服务器
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+API 服务启动后会自动在当前目录创建 `eduflow.db`（SQLite）并建表。
+
+### 3.3 启动 AI 服务
+
+```bash
+# 1. 进入 AI 服务目录
+cd services/ai
 
 # 2. 创建虚拟环境并安装依赖
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-pip install -r requirements-prod.txt
 
-# 3. 配置环境变量
-cp .env.example .env
-# 编辑 .env 文件，配置生产环境参数
+# 3. 配置环境变量（可选）
+# OPENAI_API_KEY=sk-your-api-key  # 配置后启用完整 AI 能力
+# 不配置时自动启用降级模式
 
-# 4. 初始化数据库
-alembic upgrade head
-
-# 5. 启动服务（使用 Gunicorn + Uvicorn）
-gunicorn app.main:app \
-  --worker-class uvicorn.workers.UvicornWorker \
-  --workers 4 \
-  --bind 0.0.0.0:8000 \
-  --timeout 120 \
-  --access-logfile logs/access.log \
-  --error-logfile logs/error.log
+# 4. 启动开发服务器
+uvicorn main:app --reload --host 0.0.0.0 --port 8100
 ```
 
-### 3.3 AI 智能体服务部署
+> 注意：AI 服务的 `API_PORT` 配置默认值为 8001，但实际部署时通过 uvicorn 的 `--port` 参数指定为 8100。`main.py` 中的 `__main__` 入口使用 `settings.API_PORT`，请确保端口一致。
+
+### 3.4 启动 Engine 服务
 
 ```bash
-# 1. 进入 AI 智能体目录
-cd ai-agent
+# 1. 进入 Engine 服务目录
+cd services/engine
 
-# 2. 安装依赖
+# 2. 创建虚拟环境并安装依赖
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# 3. 配置环境变量
-cp .env.example .env
-# 配置 LLM API Key 等参数
-
-# 4. 启动智能体服务
-python -m agents.runner \
-  --workers 2 \
-  --queue rabbitmq://localhost:5672
+# 3. 启动开发服务器
+uvicorn main:app --reload --host 0.0.0.0 --port 8200
 ```
 
-### 3.4 前端部署
+Engine 服务无外部依赖，可直接启动。
+
+### 3.5 启动 Web 前端
 
 ```bash
-# 1. 进入前端目录
-cd frontend
+# 1. 进入项目根目录
+cd /path/to/eduflow
 
-# 2. 安装依赖
+# 2. 安装依赖（pnpm workspace 会同时安装所有包）
 pnpm install
 
-# 3. 构建生产版本
-pnpm build
-
-# 4. 使用 PM2 启动 Next.js 服务
-npm install -g pm2
-pm2 start npm --name "eduflow-frontend" -- start
-pm2 save
+# 3. 启动前端开发服务器
+cd apps/web
+pnpm dev
 ```
 
-### 3.5 Nginx 反向代理配置
+前端开发服务器启动在 http://localhost:3000，通过 Next.js rewrites 自动将 `/api/*` 请求代理到 http://localhost:8000/api/*。
 
-```nginx
-# /etc/nginx/sites-available/eduflow.conf
+### 3.6 启动顺序建议
 
-upstream backend {
-    server 127.0.0.1:8000;
-    server 127.0.0.1:8001;  # 多实例负载均衡
+手动部署时建议按以下顺序启动：
+
+1. Redis（如需要）
+2. AI 服务（端口 8100）
+3. Engine 服务（端口 8200）
+4. API 服务（端口 8000）— 依赖 AI 服务
+5. Web 前端（端口 3000）— 依赖 API 服务
+
+---
+
+## 4. 端口说明
+
+| 服务 | 端口 | 协议 | 说明 |
+|------|------|------|------|
+| Web 前端 | 3000 | HTTP | Next.js 开发/生产服务器 |
+| API 服务 | 8000 | HTTP | FastAPI 主业务服务 |
+| AI 服务 | 8100 | HTTP | FastAPI AI 智能体服务 |
+| Engine 服务 | 8200 | HTTP | FastAPI 学习引擎服务 |
+| PostgreSQL | 5432 | TCP | 数据库（生产环境） |
+| Redis | 6379 | TCP | 缓存 |
+
+确保以上端口未被占用。如需修改端口，请同时更新对应服务的启动参数和配置。
+
+---
+
+## 5. 环境变量配置
+
+### 5.1 API 服务环境变量
+
+定义在 `services/api/core/config.py`，通过 pydantic-settings 加载，支持 `.env` 文件。
+
+| 变量名 | 默认值 | 说明 |
+|--------|--------|------|
+| `APP_NAME` | `"EduFlow API"` | 应用名称 |
+| `VERSION` | `"0.1.0"` | 应用版本 |
+| `DEBUG` | `False` | 调试模式（开启 SQL 日志） |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./eduflow.db` | 数据库连接字符串 |
+| `SECRET_KEY` | `"eduflow-secret-key-change-in-production"` | JWT 加密密钥（生产环境必须修改） |
+| `ALGORITHM` | `"HS256"` | JWT 签名算法 |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `10080` (7 天) | Token 有效期（分钟） |
+| `AI_SERVICE_URL` | `"http://localhost:8100"` | AI 服务地址 |
+| `PASS_SCORE_THRESHOLD` | `60` | 练习及格分数线 |
+| `CORS_ORIGINS` | `["http://localhost:3000", "http://localhost:5173"]` | 允许的跨域来源 |
+
+**数据库连接字符串示例**：
+
+- 开发（SQLite）：`sqlite+aiosqlite:///./eduflow.db`
+- 生产（PostgreSQL）：`postgresql+asyncpg://eduflow:eduflow@localhost:5432/eduflow`
+
+### 5.2 AI 服务环境变量
+
+定义在 `services/ai/core/config.py`。
+
+| 变量名 | 默认值 | 说明 |
+|--------|--------|------|
+| `APP_NAME` | `"EduFlow AI Service"` | 应用名称 |
+| `VERSION` | `"0.1.0"` | 应用版本 |
+| `DEBUG` | `False` | 调试模式 |
+| `OPENAI_API_KEY` | `None` | OpenAI API Key，未配置时启用降级 |
+| `LLM_PROVIDER` | `"openai"` | LLM 提供商 |
+| `LLM_MODEL` | `"gpt-4o-mini"` | 使用的模型 |
+| `LLM_TEMPERATURE` | `0.7` | 采样温度 |
+| `MAX_TOKENS` | `4096` | 最大生成 token 数 |
+| `REDIS_URL` | `"redis://localhost:6379/0"` | Redis 连接地址 |
+| `API_PORT` | `8001` | 配置中的端口（实际启动通过 uvicorn 指定 8100） |
+
+### 5.3 Web 前端环境变量
+
+| 变量名 | 默认值 | 说明 |
+|--------|--------|------|
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | API 服务地址（constants.ts 中定义） |
+| `NEXT_PUBLIC_AI_API_URL` | `http://localhost:8100` | AI 服务地址（constants.ts 中定义） |
+
+> 注意：前端实际请求通过 Next.js rewrites 代理到 `http://localhost:8000/api/*`，`NEXT_PUBLIC_API_URL` 主要用于 constants.ts 中的常量定义。在 Docker 部署中，web 容器内使用服务名 `http://api:8000`。
+
+### 5.4 Docker Compose 环境变量
+
+Docker 部署时可通过宿主机环境变量传入：
+
+```bash
+# 设置 OpenAI API Key（可选，不设置则 AI 服务降级运行）
+export OPENAI_API_KEY="sk-your-api-key"
+
+# 启动
+docker-compose up -d
+```
+
+在 `docker-compose.yml` 中，`OPENAI_API_KEY` 通过 `${OPENAI_API_KEY:-}` 引用，未设置时为空字符串，AI 服务会自动降级。
+
+---
+
+## 6. 健康检查
+
+### 6.1 健康检查端点
+
+每个后端服务都提供健康检查端点：
+
+| 服务 | 端点 | 端口 |
+|------|------|------|
+| API 服务 | `GET http://localhost:8000/api/health` | 8000 |
+| AI 服务 | `GET http://localhost:8100/api/health` | 8100 |
+| Engine 服务 | `GET http://localhost:8200/api/health` | 8200 |
+
+### 6.2 健康检查响应
+
+**API 服务**：
+
+```bash
+curl http://localhost:8000/api/health
+```
+
+```json
+{
+  "status": "ok",
+  "version": "0.1.0",
+  "service": "EduFlow API"
 }
+```
 
-upstream frontend {
-    server 127.0.0.1:3000;
+**AI 服务**：
+
+```bash
+curl http://localhost:8100/api/health
+```
+
+```json
+{
+  "status": "ok",
+  "service": "EduFlow AI Service",
+  "version": "0.1.0",
+  "timestamp": "2026-08-09T12:00:00+00:00",
+  "llm_available": false,
+  "config": {
+    "llm_provider": "openai",
+    "llm_model": "gpt-4o-mini",
+    "api_port": 8001,
+    "debug": false
+  },
+  "agents": [...],
+  "endpoints": [...]
 }
+```
 
-server {
-    listen 80;
-    server_name eduflow.example.com;
-    return 301 https://$server_name$request_uri;
+AI 服务的健康检查额外返回 `llm_available` 字段，可用于判断 AI 是否处于降级模式。
+
+**Engine 服务**：
+
+```bash
+curl http://localhost:8200/api/health
+```
+
+```json
+{
+  "status": "ok",
+  "service": "EduFlow Engine"
 }
+```
 
-server {
-    listen 443 ssl http2;
-    server_name eduflow.example.com;
+### 6.3 Docker 健康检查
 
-    ssl_certificate /etc/ssl/certs/eduflow.crt;
-    ssl_certificate_key /etc/ssl/private/eduflow.key;
+Docker Compose 中为 PostgreSQL 和 Redis 配置了健康检查：
 
-    # API 请求转发
-    location /api/ {
-        proxy_pass http://backend;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+- **PostgreSQL**：`pg_isready -U eduflow`，间隔 5 秒，重试 5 次
+- **Redis**：`redis-cli ping`，间隔 5 秒，重试 5 次
 
-        # WebSocket 支持
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
+API 服务和 AI 服务通过 `depends_on.condition: service_healthy` 确保依赖的基础设施就绪后再启动。
 
-        # 超时设置
-        proxy_connect_timeout 60s;
-        proxy_read_timeout 120s;
-    }
+### 6.4 验证部署
 
-    # AI 智能体 API
-    location /api/v1/agents/ {
-        proxy_pass http://backend;
-        proxy_read_timeout 300s;  # AI 响应可能较慢
-    }
+```bash
+# 验证 API 服务
+curl http://localhost:8000/api/health
 
-    # 静态资源
-    location /_next/ {
-        proxy_pass http://frontend;
-        proxy_cache static_cache;
-        proxy_cache_valid 200 60m;
-    }
+# 验证 AI 服务（检查 llm_available 判断是否降级）
+curl http://localhost:8100/api/health | python -m json.tool
 
-    # 前端页面
-    location / {
-        proxy_pass http://frontend;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
+# 验证 Engine 服务
+curl http://localhost:8200/api/health
+
+# 验证前端可访问
+curl http://localhost:3000
+
+# 验证前端 API 代理（需先注册用户获取 token）
+curl http://localhost:3000/api/health
 ```
 
 ---
 
-## 4. Kubernetes 部署
-
-### 4.1 前置要求
-
-- Kubernetes 集群 >= 1.28
-- kubectl 已配置
-- Helm >= 3.0
-- Ingress Controller（如 Nginx Ingress）
-- 存储类（StorageClass）已配置
-
-### 4.2 部署步骤
-
-```bash
-# 1. 创建命名空间
-kubectl create namespace eduflow
-
-# 2. 部署基础设施
-# PostgreSQL
-helm repo add bitnami https://charts.bitnami.com/bitnami
-helm install postgresql bitnami/postgresql \
-  --namespace eduflow \
-  --set auth.database=eduflow \
-  --set auth.username=eduflow \
-  --set primary.persistence.size=50Gi
-
-# Redis
-helm install redis bitnami/redis \
-  --namespace eduflow \
-  --set architecture=standalone
-
-# RabbitMQ
-helm install rabbitmq bitnami/rabbitmq \
-  --namespace eduflow
-
-# 3. 部署应用服务
-kubectl apply -f deploy/kubernetes/ -n eduflow
-
-# 4. 配置 Ingress
-kubectl apply -f deploy/kubernetes/ingress.yaml -n eduflow
-
-# 5. 验证部署
-kubectl get pods -n eduflow
-kubectl get ingress -n eduflow
-```
-
-### 4.3 Kubernetes 资源配置示例
-
-```yaml
-# deploy/kubernetes/backend-deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: eduflow-backend
-  labels:
-    app: eduflow-backend
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: eduflow-backend
-  template:
-    metadata:
-      labels:
-        app: eduflow-backend
-    spec:
-      containers:
-        - name: backend
-          image: eduflow/backend:latest
-          ports:
-            - containerPort: 8000
-          env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: eduflow-secrets
-                  key: database-url
-            - name: REDIS_URL
-              value: "redis://redis:6379"
-          resources:
-            requests:
-              cpu: "500m"
-              memory: "512Mi"
-            limits:
-              cpu: "2"
-              memory: "2Gi"
-          livenessProbe:
-            httpGet:
-              path: /api/v1/health
-              port: 8000
-            initialDelaySeconds: 30
-            periodSeconds: 10
-          readinessProbe:
-            httpGet:
-              path: /api/v1/health
-              port: 8000
-            initialDelaySeconds: 5
-            periodSeconds: 5
-```
-
----
-
-## 5. 环境变量说明
-
-### 5.1 通用环境变量
-
-| 变量名 | 必填 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `ENVIRONMENT` | 是 | `development` | 运行环境 (`development`/`staging`/`production`) |
-| `LOG_LEVEL` | 否 | `INFO` | 日志级别 (`DEBUG`/`INFO`/`WARNING`/`ERROR`) |
-| `SECRET_KEY` | 是 | - | JWT 加密密钥，生产环境务必修改 |
-| `ALLOWED_HOSTS` | 是 | `*` | 允许的 Host 列表，逗号分隔 |
-
-### 5.2 数据库
-
-| 变量名 | 必填 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `DATABASE_URL` | 是 | - | PostgreSQL 连接字符串 |
-| `DATABASE_POOL_SIZE` | 否 | `20` | 数据库连接池大小 |
-| `DATABASE_MAX_OVERFLOW` | 否 | `10` | 连接池最大溢出数 |
-
-### 5.3 Redis
-
-| 变量名 | 必填 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `REDIS_URL` | 是 | `redis://localhost:6379/0` | Redis 连接地址 |
-| `REDIS_PASSWORD` | 否 | - | Redis 密码 |
-
-### 5.4 RabbitMQ
-
-| 变量名 | 必填 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `RABBITMQ_URL` | 是 | `amqp://guest:guest@localhost:5672/` | RabbitMQ 连接地址 |
-| `RABBITMQ_QUEUE_PREFIX` | 否 | `eduflow` | 队列名称前缀 |
-
-### 5.5 Milvus 向量数据库
-
-| 变量名 | 必填 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `MILVUS_HOST` | 是 | `localhost` | Milvus 服务地址 |
-| `MILVUS_PORT` | 否 | `19530` | Milvus gRPC 端口 |
-| `MILVUS_COLLECTION` | 否 | `knowledge_base` | 默认集合名称 |
-
-### 5.6 AI / LLM
-
-| 变量名 | 必填 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `LLM_PROVIDER` | 是 | `openai` | LLM 提供商 (`openai`/`wenxin`/`azure`) |
-| `OPENAI_API_KEY` | 否 | - | OpenAI API Key |
-| `OPENAI_MODEL` | 否 | `gpt-4o` | OpenAI 模型名称 |
-| `WENXIN_API_KEY` | 否 | - | 文心一言 API Key |
-| `WENXIN_SECRET_KEY` | 否 | - | 文心一言 Secret Key |
-| `EMBEDDING_MODEL` | 否 | `text-embedding-3-large` | 向量嵌入模型 |
-
-### 5.7 对象存储
-
-| 变量名 | 必填 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `STORAGE_BACKEND` | 是 | `local` | 存储后端 (`local`/`s3`/`oss`) |
-| `S3_ENDPOINT` | 否 | - | S3 兼容存储端点 |
-| `S3_ACCESS_KEY` | 否 | - | S3 Access Key |
-| `S3_SECRET_KEY` | 否 | - | S3 Secret Key |
-| `S3_BUCKET` | 否 | `eduflow` | S3 Bucket 名称 |
-
-### 5.8 邮件/通知
-
-| 变量名 | 必填 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `SMTP_HOST` | 否 | - | SMTP 服务器地址 |
-| `SMTP_PORT` | 否 | `587` | SMTP 端口 |
-| `SMTP_USER` | 否 | - | SMTP 用户名 |
-| `SMTP_PASSWORD` | 否 | - | SMTP 密码 |
-| `SMTP_FROM` | 否 | - | 发件人地址 |
-
-### 5.9 前端
-
-| 变量名 | 必填 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `NEXT_PUBLIC_API_URL` | 是 | `http://localhost:8000` | API 服务地址 |
-| `NEXT_PUBLIC_WS_URL` | 是 | `ws://localhost:8000` | WebSocket 服务地址 |
-| `NEXT_PUBLIC_CDN_URL` | 否 | - | CDN 资源地址 |
-
----
-
-## 6. 数据库迁移
-
-### 6.1 执行迁移
-
-```bash
-# 生成迁移脚本
-alembic revision --autogenerate -m "add_course_table"
-
-# 执行迁移
-alembic upgrade head
-
-# 回滚迁移
-alembic downgrade -1
-
-# 查看迁移历史
-alembic history
-```
-
-### 6.2 数据初始化
-
-```bash
-# 导入初始数据（管理员账号、默认配置等）
-python scripts/seed_data.py
-
-# 导入测试数据（开发环境）
-python scripts/seed_test_data.py
-```
-
-### 6.3 数据库备份
-
-```bash
-# 备份
-pg_dump -U eduflow -d eduflow_prod > backup/eduflow_$(date +%Y%m%d).sql
-
-# 恢复
-psql -U eduflow -d eduflow_prod < backup/eduflow_20260809.sql
-```
-
----
-
-## 7. 监控与维护
-
-### 7.1 健康检查
-
-```bash
-# 后端健康检查
-curl http://localhost:8000/api/v1/health
-
-# 预期响应
-# {"status": "ok", "version": "0.1.0", "timestamp": "2026-08-09T12:00:00Z"}
-```
-
-### 7.2 日志查看
-
-```bash
-# Docker 环境
-docker-compose logs -f --tail=100 backend
-
-# 手动部署
-tail -f logs/access.log
-tail -f logs/error.log
-
-# Kubernetes
-kubectl logs -f deployment/eduflow-backend -n eduflow
-```
-
-### 7.3 性能监控
-
-- **Prometheus 指标**: 所有服务暴露 `/metrics` 端点，提供 Prometheus 标准格式指标。
-- **Grafana 看板**: 预置的 Grafana Dashboard 提供 CPU、内存、请求量、延迟等可视化监控。
-- **告警规则**: 配置了服务宕机、高延迟、错误率飙升等告警。
-
-### 7.4 常见问题排查
+## 7. 常见问题排查
 
 | 问题 | 可能原因 | 解决方法 |
 |------|---------|----------|
-| 服务启动失败 | 数据库连接失败 | 检查 `DATABASE_URL` 是否正确，数据库是否可访问 |
-| API 返回 401 | Token 过期或无效 | 检查 `SECRET_KEY` 配置，重新登录获取 Token |
-| AI 智能体响应超时 | LLM API 不可用 | 检查 API Key 和配额，查看 LLM 服务状态 |
-| 视频上传失败 | 存储服务异常 | 检查存储后端配置，确认磁盘空间或 S3 访问权限 |
-| 页面加载慢 | 前端静态资源未缓存 | 配置 CDN 或 Nginx 缓存策略 |
+| API 服务启动失败 | 端口 8000 被占用 | 检查端口占用：`lsof -i :8000`，释放或更换端口 |
+| API 服务无法连接 AI 服务 | `AI_SERVICE_URL` 配置错误 | 检查 `AI_SERVICE_URL` 是否指向正确的 AI 服务地址 |
+| AI 接口返回 503 | AI 服务未启动或不可达 | 确认 AI 服务（端口 8100）已启动且正常运行 |
+| AI 接口返回 504 | AI 服务响应超时（>60s） | 检查 OpenAI API Key 是否有效，网络是否通畅 |
+| AI 功能降级运行 | 未配置 `OPENAI_API_KEY` | 设置环境变量 `OPENAI_API_KEY`，重启 AI 服务 |
+| 数据库连接失败 | `DATABASE_URL` 配置错误 | 开发环境使用 SQLite，生产环境检查 PostgreSQL 连接字符串 |
+| 前端 API 请求 404 | Next.js rewrites 未生效 | 确认 API 服务（端口 8000）已启动，检查 `next.config.js` 配置 |
+| 前端登录失败 | JWT `SECRET_KEY` 不一致 | 确认 API 服务的 `SECRET_KEY` 配置正确 |
+| PostgreSQL 健康检查失败 | 数据库未就绪 | 等待启动完成，检查 `docker-compose logs postgres` |
+| Docker 构建失败 | Dockerfile 上下文路径错误 | 确认从 `docker/` 目录执行 `docker-compose`，构建上下文为 `../services/*` |
 
----
+### 日志查看
 
-> 如有部署相关问题，请提交 [GitHub Issue](https://github.com/your-org/eduflow/issues) 或发送邮件至 maintainers@eduflow.dev。
+```bash
+# Docker 环境
+docker-compose logs -f api
+docker-compose logs -f ai-service
+docker-compose logs -f engine
+docker-compose logs -f web
+
+# 手动部署（uvicorn 终端输出）
+# 开发模式下日志直接输出到终端
+# 开启 SQL 日志：设置 DEBUG=True
+```
+
+### 数据库管理
+
+```bash
+# 连接 PostgreSQL（Docker 环境）
+docker-compose exec postgres psql -U eduflow -d eduflow
+
+# 连接 PostgreSQL（手动部署）
+psql -U eduflow -d eduflow -h localhost -p 5432
+
+# 开发环境 SQLite 文件位于 services/api/eduflow.db
+# 可使用 sqlite3 命令行工具或 DB Browser for SQLite 查看
+```
