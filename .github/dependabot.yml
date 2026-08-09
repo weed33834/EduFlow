@@ -4,19 +4,24 @@ updates:
     directory: "/"
     schedule: { interval: "weekly" }
     labels: ["dependencies", "frontend"]
+    auto-merge: true
   - package-ecosystem: "pip"
     directory: "/services/api"
     schedule: { interval: "weekly" }
     labels: ["dependencies", "backend"]
+    auto-merge: true
   - package-ecosystem: "pip"
     directory: "/services/ai"
     schedule: { interval: "weekly" }
     labels: ["dependencies", "backend"]
+    auto-merge: true
   - package-ecosystem: "pip"
     directory: "/services/engine"
     schedule: { interval: "weekly" }
     labels: ["dependencies", "backend"]
+    auto-merge: true
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule: { interval: "weekly" }
     labels: ["dependencies"]
+    auto-merge: true
