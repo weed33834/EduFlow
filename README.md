@@ -56,6 +56,20 @@ cd apps/web && pnpm dev
 - **AI 出题者 Examiner** — 自适应出题，即时反馈解析
 - **AI 规划师 Planner** — 个性化学习路径规划
 
+## 文档
+
+更详细的文档请参阅 `docs/` 目录：
+
+| 文档 | 说明 |
+|------|------|
+| [架构设计](docs/architecture.md) | 系统架构、分层设计、数据流 |
+| [部署文档](docs/deployment.md) | Docker 部署、手动部署、环境变量 |
+| [API 文档](docs/api.md) | 各服务 API 端点说明 |
+| [开发指南](docs/development.md) | 本地开发、代码规范、测试 |
+| [AI 智能体](docs/ai-agents.md) | 四个智能体的功能和工作流程 |
+| [贡献指南](CONTRIBUTING.md) | 如何参与项目贡献 |
+| [变更日志](CHANGELOG.md) | 版本发布历史 |
+
 ## 许可
 
 MIT License
