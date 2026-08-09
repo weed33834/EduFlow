@@ -7,7 +7,13 @@ export const DIFFICULTY_LABELS: Record<string, string> = {
 }
 
 export const MODULE_STATUS_LABELS: Record<string, string> = {
-  pending: '未开始',
+  not_started: '未开始',
+  in_progress: '进行中',
+  completed: '已完成',
+}
+
+export const PATH_STATUS_LABELS: Record<string, string> = {
+  not_started: '未开始',
   in_progress: '进行中',
   completed: '已完成',
 }

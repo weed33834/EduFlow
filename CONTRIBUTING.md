@@ -6,7 +6,29 @@
 
 ## 项目简介
 
-EduFlow 畅学 是一个基于 AI 智能体的下一代在线学习平台，致力于通过人工智能技术为学习者提供个性化、自适应、高效的学习体验。平台采用微服务架构，集成了多个 AI 智能体，覆盖学习路径规划、知识问答、作业批改与学习进度追踪等核心场景。
+EduFlow 畅学 是一个基于 AI 智能体的下一代在线学习平台，致力于通过人工智能技术为学习者提供个性化、自适应、高效的学习体验。平台采用 pnpm monorepo 架构，集成了多个 AI 智能体，覆盖学习路径规划、知识问答、作业批改与学习进度追踪等核心场景。
+
+### 仓库结构
+
+项目采用 pnpm monorepo 架构，整体目录结构如下：
+
+```
+eduflow/
+├── apps/
+│   └── web/              # 前端应用（Next.js + TypeScript + Tailwind CSS）
+├── services/
+│   ├── api/              # 后端主服务（FastAPI + SQLAlchemy）
+│   ├── ai/               # AI 智能体服务（FastAPI）
+│   └── engine/           # 引擎服务（FastAPI）
+├── packages/
+│   ├── shared/           # 共享类型与工具包
+│   └── ui/               # 共享 UI 组件库
+├── docker/               # Docker 编排配置
+├── docs/                 # 项目文档
+├── package.json          # 根 package.json（monorepo 入口）
+├── pnpm-workspace.yaml   # pnpm workspace 配置
+└── pnpm-lock.yaml        # 依赖锁定文件
+```
 
 ---
 
@@ -14,8 +36,8 @@ EduFlow 畅学 是一个基于 AI 智能体的下一代在线学习平台，致�
 
 ### 前置要求
 
-- Python >= 3.10
 - Node.js >= 18.0.0
+- Python >= 3.12
 - pnpm >= 8.0.0
 - Docker & Docker Compose >= 2.0
 - PostgreSQL >= 15
@@ -29,7 +51,17 @@ git clone https://github.com/your-org/eduflow.git
 cd eduflow
 ```
 
-### 2. 后端环境配置
+### 2. 安装前端依赖（pnpm monorepo）
+
+项目使用 pnpm workspace 管理所有前端与共享包的依赖。在仓库根目录执行以下命令即可一次性安装所有 workspace 包的依赖：
+
+```bash
+pnpm install
+```
+
+该命令会自动识别 `apps/web`、`packages/shared` 和 `packages/ui` 等 workspace 包并安装其依赖。
+
+### 3. 后端环境配置
 
 ```bash
 # 创建 Python 虚拟环境
@@ -37,34 +69,35 @@ python -m venv venv
 source venv/bin/activate  # Linux/macOS
 # 或 venv\Scripts\activate  # Windows
 
-# 安装依赖
-cd backend
+# 安装主 API 服务依赖
+cd services/api
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
+
+# 安装 AI 服务依赖
+cd ../ai
+pip install -r requirements.txt
+
+# 安装引擎服务依赖
+cd ../engine
+pip install -r requirements.txt
 
 # 复制环境变量模板
 cp .env.example .env
 # 编辑 .env 文件，填入必要的配置信息
 ```
 
-### 3. 前端环境配置
-
-```bash
-cd frontend
-pnpm install
-```
-
 ### 4. 启动基础设施服务
 
 ```bash
-cd deploy
+cd docker
 docker-compose up -d postgres redis
 ```
 
 ### 5. 初始化数据库
 
 ```bash
-cd backend
+cd services/api
 alembic upgrade head
 python scripts/seed_data.py
 ```
@@ -72,16 +105,20 @@ python scripts/seed_data.py
 ### 6. 启动开发服务
 
 ```bash
-# 终端 1：启动后端服务
-cd backend
+# 终端 1：启动后端主服务（FastAPI + SQLAlchemy）
+cd services/api
 uvicorn app.main:app --reload --port 8000
 
-# 终端 2：启动 AI 智能体服务
-cd backend
-python -m agents.runner
+# 终端 2：启动 AI 智能体服务（FastAPI）
+cd services/ai
+uvicorn main:app --reload --port 8001
 
-# 终端 3：启动前端开发服务
-cd frontend
+# 终端 3：启动引擎服务（FastAPI）
+cd services/engine
+uvicorn main:app --reload --port 8002
+
+# 终端 4：启动前端开发服务（Next.js）
+cd apps/web
 pnpm dev
 ```
 
@@ -91,7 +128,40 @@ pnpm dev
 
 ## 代码规范
 
-### Python 规范
+### 前端规范（apps/web、packages/ui、packages/shared）
+
+- **格式化**: 使用 [Prettier](https://prettier.io/) 进行代码格式化。
+- **Lint 检查**: 使用 [ESLint](https://eslint.org/) 配合 `@typescript-eslint` 规则集。
+- **类型定义**: 优先使用 `interface` 而非 `type`，避免使用 `any`。
+- **命名约定**:
+  - 组件名: `PascalCase`
+  - 函数/变量: `camelCase`
+  - 常量: `UPPER_SNAKE_CASE`
+  - 文件命名: 组件文件使用 `PascalCase.tsx`，工具文件使用 `camelCase.ts`
+- **React 组件**: 使用函数组件和 Hooks，避免类组件。
+- **样式**: 使用 Tailwind CSS，UI 组件统一从 `packages/ui` 引入。
+
+```typescript
+// 示例
+interface Course {
+  id: string;
+  title: string;
+  description: string;
+  duration: number;
+}
+
+const CourseCard: React.FC<Course> = ({ id, title, description, duration }) => {
+  return (
+    <div className="course-card">
+      <h3>{title}</h3>
+      <p>{description}</p>
+      <span>{duration} 分钟</span>
+    </div>
+  );
+};
+```
+
+### 后端规范（services/api、services/ai、services/engine）
 
 - **格式化**: 使用 [Black](https://github.com/psf/black) 进行代码格式化，行长度限制为 88 字符。
 - **导入排序**: 使用 [isort](https://github.com/PyCQA/isort) 对导入进行排序。
@@ -122,38 +192,6 @@ class CourseService:
             包含课程信息的字典，如果未找到则返回 None。
         """
         ...
-```
-
-### TypeScript 规范
-
-- **格式化**: 使用 [Prettier](https://prettier.io/) 进行代码格式化。
-- **Lint 检查**: 使用 [ESLint](https://eslint.org/) 配合 `@typescript-eslint` 规则集。
-- **类型定义**: 优先使用 `interface` 而非 `type`，避免使用 `any`。
-- **命名约定**:
-  - 组件名: `PascalCase`
-  - 函数/变量: `camelCase`
-  - 常量: `UPPER_SNAKE_CASE`
-  - 文件命名: 组件文件使用 `PascalCase.tsx`，工具文件使用 `camelCase.ts`
-- **React 组件**: 使用函数组件和 Hooks，避免类组件。
-
-```typescript
-// 示例
-interface Course {
-  id: string;
-  title: string;
-  description: string;
-  duration: number;
-}
-
-const CourseCard: React.FC<Course> = ({ id, title, description, duration }) => {
-  return (
-    <div className="course-card">
-      <h3>{title}</h3>
-      <p>{description}</p>
-      <span>{duration} 分钟</span>
-    </div>
-  );
-};
 ```
 
 ### 提交规范
@@ -195,22 +233,55 @@ Closes #123
 
 ---
 
+## 分支管理策略
+
+我们采用简洁的分支管理策略：
+
+### 分支结构
+
+```
+main          - 主分支，始终处于可发布状态，受保护
+├── feature/*  - 功能分支，从 main 创建，完成后合并回 main
+├── fix/*      - Bug 修复分支，从 main 创建
+└── docs/*     - 文档更新分支，从 main 创建
+```
+
+### 规则说明
+
+- **main 分支**：主分支，始终处于可发布状态。受保护，禁止直接推送，仅通过 PR 合并。
+- **feature/\* 分支**：功能开发分支，从 `main` 创建，完成后通过 PR 合并回 `main`。
+- **fix/\* 分支**：Bug 修复分支，从 `main` 创建，完成后通过 PR 合并回 `main`。
+- **docs/\* 分支**：文档更新分支，从 `main` 创建，完成后通过 PR 合并回 `main`。
+
+### 分支命名规范
+
+```
+feature/<简要描述>    # 如 feature/course-recommendation
+fix/<简要描述>        # 如 fix/login-redirect-error
+docs/<简要描述>       # 如 docs/api-docs-update
+```
+
+---
+
 ## 提交 PR 流程
 
 1. **Fork 仓库**：将主仓库 Fork 到您的 GitHub 账户。
 
-2. **创建分支**：从 `main` 分支创建您的特性分支。
+2. **创建分支**：从 `main` 分支创建您的功能分支。
 
    ```bash
    git checkout main
    git pull origin main
-   git checkout -b feat/your-feature-name
+   git checkout -b feature/your-feature-name
    ```
 
 3. **开发与测试**：在您的分支上进行开发，确保：
-   - 所有测试通过：`pytest tests/` 和 `pnpm test`
-   - 代码通过 Lint 检查：`ruff check .` 和 `pnpm lint`
-   - 代码格式化通过：`black .` 和 `pnpm format`
+   - 前端测试通过：`pnpm test`
+   - 后端测试通过：`pytest services/api/tests/`
+   - 前端代码通过 Lint 检查：`pnpm lint`
+   - 前端代码格式化通过：`pnpm format`
+   - 后端代码格式化通过：`black services/` 和 `isort services/`
+   - 后端代码通过 Lint 检查：`ruff check services/`
    - 新增功能包含足够的测试覆盖
 
 4. **提交变更**：
@@ -223,57 +294,22 @@ Closes #123
 5. **推送到远程**：
 
    ```bash
-   git push origin feat/your-feature-name
+   git push origin feature/your-feature-name
    ```
 
 6. **创建 Pull Request**：
    - 前往 GitHub 仓库页面，点击 "New Pull Request"
    - 确保 PR 的目标分支为 `main`
-   - 填写 PR 模板中的内容
+   - 填写 PR 模板中的内容，包括变更说明和测试方式
    - 关联相关的 Issue（如有）
    - 添加合适的标签（label）
 
 7. **代码审查**：
    - 至少需要一位维护者批准
-   - 所有 CI 检查必须通过
-   - 根据审查意见进行修改
+   - 所有 CI 检查必须通过（Lint、测试、构建）
+   - 根据审查意见进行修改，并将更新推送至同一分支
 
-8. **合并**：审查通过后，由维护者进行 Squash & Merge。
-
----
-
-## 分支管理策略
-
-我们采用以下分支管理策略：
-
-### 分支结构
-
-```
-main          - 生产环境分支，始终处于可发布状态
-├── develop   - 开发主分支，集成所有特性
-├── feat/*    - 特性分支，从 develop 分支创建
-├── fix/*     - Bug 修复分支
-├── docs/*    - 文档更新分支
-└── release/* - 发布准备分支
-```
-
-### 规则说明
-
-- **main 分支**：受保护，禁止直接推送。仅通过 PR 从 `release/*` 或 `hotfix/*` 合并。
-- **develop 分支**：日常开发集成分支，所有 `feat/*` 分支合并至此。
-- **feat/* 分支**：从 `develop` 创建，完成后合并回 `develop`。
-- **release/* 分支**：从 `develop` 创建，用于发布前的测试和 Bug 修复，完成后合并到 `main` 和 `develop`。
-- **hotfix/* 分支**：从 `main` 创建，用于紧急修复生产环境问题，完成后合并到 `main` 和 `develop`。
-
-### 分支命名规范
-
-```
-feat/<简要描述>       # 如 feat/course-recommendation
-fix/<简要描述>        # 如 fix/login-redirect-error
-docs/<简要描述>       # 如 docs/api-docs-update
-release/<版本号>      # 如 release/v0.2.0
-hotfix/<简要描述>     # 如 hotfix/critical-security-patch
-```
+8. **合并**：审查通过后，由维护者进行 Squash & Merge，合并至 `main` 分支。
 
 ---
 

@@ -12,3 +12,7 @@ __pycache__/
 *.log
 .DS_Store
 coverage/
+*.db
+eduflow.db
+*.tsbuildinfo
+next-env.d.ts
