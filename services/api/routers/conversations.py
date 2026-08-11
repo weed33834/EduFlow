@@ -64,7 +64,7 @@ async def _get_owned(db: AsyncSession, conv_id: int, user_id: int) -> Conversati
     return conv
 
 
-@router.get("/")
+@router.get("")
 async def list_conversations(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -92,7 +92,7 @@ async def list_conversations(
     return {"conversations": out}
 
 
-@router.post("/")
+@router.post("")
 async def create_conversation(
     req: ConversationCreate,
     current_user: User = Depends(get_current_user),

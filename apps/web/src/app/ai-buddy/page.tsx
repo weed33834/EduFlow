@@ -19,7 +19,7 @@ const STORAGE_KEY = 'eduflow_chat_buddy'
 export default function AiBuddyPage() {
   const router = useRouter()
   const { user, loading } = useAuth()
-  const { conversations, activeId, messages, setMessages, serverReady, refresh, select, newConversation, append } =
+  const { conversations, activeId, messages, setMessages, serverReady, refresh, select, newConversation, append, persistOnly } =
     useConversations('buddy', STORAGE_KEY)
 
   const [input, setInput] = useState('')
@@ -64,7 +64,7 @@ export default function AiBuddyPage() {
           setMessages(prev => prev.map(m => (m.timestamp === assistantId ? { ...m, content: acc } : m)))
         }
       )
-      await append('assistant', acc || '（伴学暂时没有回复，请稍后再试）')
+      await persistOnly('assistant', acc || '（伴学暂时没有回复，请稍后再试）')
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : '发送失败'
       setError(errMsg)

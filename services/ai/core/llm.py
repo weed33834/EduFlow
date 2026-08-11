@@ -12,11 +12,12 @@ from openai import AsyncOpenAI
 from core.config import settings
 
 # 仅在配置了 API Key 时创建客户端
-client: Optional[AsyncOpenAI] = (
-    AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-    if settings.OPENAI_API_KEY
-    else None
-)
+client: Optional[AsyncOpenAI] = None
+if settings.OPENAI_API_KEY:
+    client_kwargs: dict = {"api_key": settings.OPENAI_API_KEY}
+    if settings.OPENAI_BASE_URL:
+        client_kwargs["base_url"] = settings.OPENAI_BASE_URL
+    client = AsyncOpenAI(**client_kwargs)
 
 
 def is_llm_available() -> bool:
@@ -182,13 +183,17 @@ async def chat_completion(
     full_messages.extend(messages)
     full_messages = _trim_messages(full_messages)
 
-    resp = await client.chat.completions.create(
-        model=settings.LLM_MODEL,
-        messages=full_messages,
-        temperature=temperature if temperature is not None else settings.LLM_TEMPERATURE,
-        max_tokens=settings.MAX_TOKENS,
-    )
-    return resp.choices[0].message.content
+    try:
+        resp = await client.chat.completions.create(
+            model=settings.LLM_MODEL,
+            messages=full_messages,
+            temperature=temperature if temperature is not None else settings.LLM_TEMPERATURE,
+            max_tokens=settings.MAX_TOKENS,
+        )
+        return resp.choices[0].message.content
+    except Exception:
+        # LLM 运行期异常(额度/网络/模型不存在等)时优雅降级，不让上层 500
+        return _build_fallback_reply(messages, agent_type)
 
 
 async def stream_chat(
@@ -210,13 +215,17 @@ async def stream_chat(
     full_messages.extend(messages)
     full_messages = _trim_messages(full_messages)
 
-    stream = await client.chat.completions.create(
-        model=settings.LLM_MODEL,
-        messages=full_messages,
-        temperature=settings.LLM_TEMPERATURE,
-        max_tokens=settings.MAX_TOKENS,
-        stream=True,
-    )
+    try:
+        stream = await client.chat.completions.create(
+            model=settings.LLM_MODEL,
+            messages=full_messages,
+            temperature=settings.LLM_TEMPERATURE,
+            max_tokens=settings.MAX_TOKENS,
+            stream=True,
+        )
+    except Exception:
+        yield _build_fallback_reply(messages, agent_type)
+        return
     async for chunk in stream:
         if chunk.choices[0].delta.content:
             yield chunk.choices[0].delta.content

@@ -29,6 +29,7 @@ class Settings(BaseSettings):
 
     # ---- LLM 相关配置 ----
     OPENAI_API_KEY: Optional[str] = None
+    OPENAI_BASE_URL: Optional[str] = None  # 兼容 OpenAI 格式的自定义端点
     LLM_PROVIDER: str = "openai"
     LLM_MODEL: str = "gpt-4o-mini"
     LLM_TEMPERATURE: float = 0.7

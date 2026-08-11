@@ -427,10 +427,10 @@ export interface ConversationDetail extends Conversation {
 
 /** 会话 API */
 export const conversationAPI = {
-  list: () => request<{ conversations: Conversation[] }>('/conversations/'),
+  list: () => request<{ conversations: Conversation[] }>('/conversations'),
 
   create: (agentType: 'tutor' | 'buddy', title = '') =>
-    request<Conversation>('/conversations/', {
+    request<Conversation>('/conversations', {
       method: 'POST',
       body: JSON.stringify({ agent_type: agentType, title }),
     }),

@@ -19,7 +19,7 @@ const STORAGE_KEY = 'eduflow_chat_tutor'
 export default function AiTutorPage() {
   const router = useRouter()
   const { user, loading } = useAuth()
-  const { conversations, activeId, messages, setMessages, serverReady, refresh, select, newConversation, append } =
+  const { conversations, activeId, messages, setMessages, serverReady, refresh, select, newConversation, append, persistOnly } =
     useConversations('tutor', STORAGE_KEY)
 
   const [input, setInput] = useState('')
@@ -66,7 +66,7 @@ export default function AiTutorPage() {
           setMessages(prev => prev.map(m => (m.timestamp === assistantId ? { ...m, content: acc } : m)))
         }
       )
-      await append('assistant', acc || '（导师暂时没有回复，请稍后再试）')
+      await persistOnly('assistant', acc || '（导师暂时没有回复，请稍后再试）')
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : '发送失败'
       setError(errMsg)
