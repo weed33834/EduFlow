@@ -103,8 +103,10 @@ cd apps/web && pnpm dev
 | `ALGORITHM` | `HS256` | JWT 加密算法 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `10080`（7 天） | 访问令牌有效期（分钟） |
 | `AI_SERVICE_URL` | `http://localhost:8100` | AI 服务地址 |
+| `ENGINE_SERVICE_URL` | `http://localhost:8200` | 学习引擎(FSRS)服务地址 |
 | `PASS_SCORE_THRESHOLD` | `60` | 练习及格分数阈值 |
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | 允许跨域的来源 |
+| `ENV` | `development` | 运行环境；`production` 下强制使用非默认 `SECRET_KEY` |
 | `OPENAI_API_KEY` | — | OpenAI API 密钥（容器部署时透传） |
 
 ### AI 服务（services/ai）
@@ -120,7 +122,25 @@ cd apps/web && pnpm dev
 
 ### Engine 服务（services/engine）
 
-Engine 服务默认监听 `8200` 端口，无额外必填环境变量。
+Engine 服务默认监听 `8200` 端口，提供 FSRS 知识追踪、间隔重复复习排期与学习时长估算，
+已通过 API 网关（`/api/engine/*`）接入。无额外必填环境变量。
+
+### 数据库迁移（Alembic）
+
+开发环境启动时自动建表；生产环境请使用迁移管理数据库结构：
+
+```bash
+cd services/api
+alembic revision --autogenerate -m "描述本次变更"   # 生成迁移
+alembic upgrade head                                # 应用迁移
+```
+
+### 测试
+
+```bash
+# 后端 API 端到端测试
+cd services/api && pip install pytest httpx && PYTHONPATH=. python -m pytest tests/ -q
+```
 
 ### 前端（apps/web）
 
@@ -163,4 +183,4 @@ Engine 服务默认监听 `8200` 端口，无额外必填环境变量。
 
 ## 许可
 
-MIT License
+Apache-2.0 License（版权声明见 NOTICE）
