@@ -39,3 +39,10 @@ jobs:
           python-version: "3.11"
       - name: Install ${{ matrix.service }} dependencies
         run: pip install -r services/${{ matrix.service }}/requirements.txt
+      - name: Compile check ${{ matrix.service }}
+        run: python -m compileall -q services/${{ matrix.service }}
+      - name: Run API tests
+        if: matrix.service == 'api'
+        run: |
+          pip install -q pytest httpx
+          cd services/api && PYTHONPATH=. python -m pytest tests/ -q
