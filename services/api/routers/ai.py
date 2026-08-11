@@ -60,6 +60,12 @@ class PlanRequest(BaseModel):
     preferences: Union[list, dict, str, None] = None
 
 
+class KnowledgeRequest(BaseModel):
+    query: str
+    topic: str = ""
+    include_prerequisites: bool = False
+
+
 async def _proxy_to_ai(path: str, payload: dict) -> dict:
     """Unified proxy function to forward requests to the AI service.
     Handles timeouts and connection errors.
@@ -204,3 +210,14 @@ async def learning_plan(
     }
     payload["user_id"] = current_user.id
     return await _proxy_to_ai("/api/agents/plan", payload)
+
+
+@router.post("/knowledge")
+async def knowledge_search(
+    req: KnowledgeRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """知识库检索工具：返回相关知识条目与可选前置知识。"""
+    payload = req.model_dump()
+    payload["user_id"] = current_user.id
+    return await _proxy_to_ai("/api/agents/knowledge", payload)

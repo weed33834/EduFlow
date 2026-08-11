@@ -102,6 +102,12 @@ class AdjustPlanRequest(BaseModel):
     current_plan: dict = Field(default_factory=dict)
 
 
+class KnowledgeRequest(BaseModel):
+    query: str
+    topic: str = ""
+    include_prerequisites: bool = False
+
+
 # ---------------------------------------------------------------------------
 # 健康检查
 # ---------------------------------------------------------------------------
@@ -303,6 +309,24 @@ async def agent_adjust_plan(req: AdjustPlanRequest):
         "plan": adjusted,
         "feedback": req.feedback,
         "llm_available": is_llm_available(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 知识库检索（工具）
+# ---------------------------------------------------------------------------
+
+@app.post("/api/agents/knowledge")
+async def agent_knowledge(req: KnowledgeRequest):
+    """知识库检索工具：根据查询返回相关知识条目与可选的前置知识。"""
+    from core.rag import build_knowledge_context, build_prerequisite_context
+
+    results = await build_knowledge_context(req.query, req.topic, max_items=8)
+    prereqs = await build_prerequisite_context(req.query) if req.include_prerequisites else ""
+    return {
+        "knowledge": results,
+        "prerequisites": prereqs,
+        "has_results": bool(results),
     }
 
 

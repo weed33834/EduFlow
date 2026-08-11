@@ -446,6 +446,13 @@ export const aiAPI = {
       body: JSON.stringify({ goal, level, duration_weeks: durationWeeks, difficulty, context }),
     }),
 
+  /** 知识库检索工具 */
+  knowledge: (query: string, topic = '', includePrerequisites = false) =>
+    request<{ knowledge: string; prerequisites: string; has_results: boolean }>('/ai/knowledge', {
+      method: 'POST',
+      body: JSON.stringify({ query, topic, include_prerequisites: includePrerequisites }),
+    }),
+
   /** 流式对话(SSE)：通过 onDelta 回调接收增量文本 */
   chatStream: (
     message: string,
