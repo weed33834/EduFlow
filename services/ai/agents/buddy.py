@@ -19,7 +19,7 @@ BUDDY_SYSTEM_PROMPT = """你是一位 AI 学习伙伴，像同学一样和学生
 请用中文交流，语气亲切友好。"""
 
 
-async def buddy_chat(message: str, context: Optional[dict] = None) -> str:
+async def buddy_chat(message: str, context: Optional[dict] = None, history: Optional[list] = None) -> str:
     """学习伙伴式对话。
 
     以朋友的口吻与学生交流，给予鼓励和陪伴。
@@ -28,6 +28,7 @@ async def buddy_chat(message: str, context: Optional[dict] = None) -> str:
     Args:
         message: 学生的消息内容。
         context: 学习上下文，可包含 topic、progress 等信息。
+        history: 多轮会话历史，[{"role": "user"|"assistant", "content": "..."}]。
 
     Returns:
         学习伙伴的回复文本。
@@ -38,9 +39,11 @@ async def buddy_chat(message: str, context: Optional[dict] = None) -> str:
         if context.get("progress"):
             context_str += f"\n学习进度：{context['progress']}"
 
-    messages = [
-        {"role": "user", "content": f"{context_str}\n\n{message}"}
-    ]
+    messages: list[dict] = []
+    for h in history or []:
+        if isinstance(h, dict) and h.get("role") in ("user", "assistant") and h.get("content"):
+            messages.append({"role": h["role"], "content": str(h["content"])})
+    messages.append({"role": "user", "content": f"{context_str}\n\n{message}"})
     return await chat_completion(messages, BUDDY_SYSTEM_PROMPT, agent_type="buddy")
 
 

@@ -17,6 +17,7 @@ class ChatRequest(BaseModel):
     message: str
     context: dict = {}
     agent_type: str = "tutor"
+    history: list = Field(default_factory=list)
 
 
 class GenerateQuestionsRequest(BaseModel):

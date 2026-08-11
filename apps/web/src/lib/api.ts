@@ -369,10 +369,15 @@ export const progressAPI = {
 
 /** AI API */
 export const aiAPI = {
-  chat: (message: string, agentType: 'tutor' | 'buddy' = 'tutor', context: Record<string, unknown> = {}) =>
+  chat: (
+    message: string,
+    agentType: 'tutor' | 'buddy' = 'tutor',
+    context: Record<string, unknown> = {},
+    history: Array<{ role: 'user' | 'assistant'; content: string }> = []
+  ) =>
     request<AIChatResponse>('/ai/chat', {
       method: 'POST',
-      body: JSON.stringify({ message, agent_type: agentType, context }),
+      body: JSON.stringify({ message, agent_type: agentType, context, history }),
     }),
 
   generateQuestions: (topic: string, difficulty = 'medium', count = 5, context = '') =>

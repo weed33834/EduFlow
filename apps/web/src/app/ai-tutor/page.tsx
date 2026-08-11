@@ -94,10 +94,14 @@ export default function AiTutorPage() {
     setSending(true)
 
     try {
+      const history = [...messages, userMsg].map(m => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      }))
       const res = await aiAPI.chat(trimmed, 'tutor', {
         user_id: user?.id,
         username: user?.username,
-      })
+      }, history)
       const assistantMsg: ChatMessage = {
         role: 'assistant',
         content: res.response || res.toString() || '（导师暂时没有回复，请稍后再试）',

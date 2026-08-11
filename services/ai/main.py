@@ -59,6 +59,8 @@ class ChatRequest(BaseModel):
     message: str
     agent_type: str = "tutor"
     context: dict = Field(default_factory=dict)
+    # 多轮会话历史：[{"role": "user"|"assistant", "content": "..."}]
+    history: list = Field(default_factory=list)
 
 
 class ExplainRequest(BaseModel):
@@ -154,9 +156,9 @@ async def agent_chat(req: ChatRequest):
         )
 
     if req.agent_type == "tutor":
-        result = await tutor_chat(req.message, req.context)
+        result = await tutor_chat(req.message, req.context, req.history)
     else:
-        result = await buddy_chat(req.message, req.context)
+        result = await buddy_chat(req.message, req.context, req.history)
 
     return {
         "response": result,

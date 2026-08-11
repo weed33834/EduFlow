@@ -27,7 +27,7 @@ _LEVEL_DESC = {
 }
 
 
-async def tutor_chat(message: str, context: Optional[dict] = None) -> str:
+async def tutor_chat(message: str, context: Optional[dict] = None, history: Optional[list] = None) -> str:
     """苏格拉底式教学对话。
 
     引导学生自主思考，而非直接给出答案。
@@ -36,6 +36,7 @@ async def tutor_chat(message: str, context: Optional[dict] = None) -> str:
     Args:
         message: 学生的提问内容。
         context: 学习上下文，可包含 topic、module、learning_history 等信息。
+        history: 多轮会话历史，[{"role": "user"|"assistant", "content": "..."}]。
 
     Returns:
         导师的回复文本。
@@ -46,9 +47,12 @@ async def tutor_chat(message: str, context: Optional[dict] = None) -> str:
         if context.get("learning_history"):
             context_str += f"\n学习历史：{context['learning_history']}"
 
-    messages = [
-        {"role": "user", "content": f"{context_str}\n\n学生问题：{message}"}
-    ]
+    # 组装消息：历史 + 当前问题（历史消息含 context，避免重复插入上下文）
+    messages: list[dict] = []
+    for h in history or []:
+        if isinstance(h, dict) and h.get("role") in ("user", "assistant") and h.get("content"):
+            messages.append({"role": h["role"], "content": str(h["content"])})
+    messages.append({"role": "user", "content": f"{context_str}\n\n学生问题：{message}"})
     return await chat_completion(messages, TUTOR_SYSTEM_PROMPT, agent_type="tutor")
 
 
