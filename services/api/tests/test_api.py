@@ -130,3 +130,38 @@ def test_engine_gateway_degraded():
             json={"knowledge_state": {"topic": "Python", "mastery_level": 0.5}},
         )
         assert r.status_code == 503
+
+
+def test_review_scheduling_after_practice():
+    # 练习完成后应自动生成复习项；引擎不可用时降级排期，功能不中断
+    with _client() as c:
+        token = _auth(c)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        path = c.post("/api/learning/paths", headers=headers,
+                      json={"title": "数学", "goal": "学数学"}).json()
+        module = c.post("/api/learning/modules", headers=headers,
+                        json={"path_id": path["id"], "title": "微积分"}).json()
+        sess = c.post("/api/practice/sessions", headers=headers, json={
+            "module_id": module["id"],
+            "questions": [{"id": 1, "question": "q", "options": ["a"], "answer": "0"}],
+        }).json()
+        c.post("/api/practice/submit", headers=headers,
+               json={"session_id": sess["id"], "question_id": 1, "answer": "0"})
+        c.put(f"/api/practice/sessions/{sess['id']}/complete", headers=headers,
+              json={"weak_points": ["积分"]})
+
+        due = c.get("/api/review/due", headers=headers).json()
+        # 生成 微积分 + 积分 两个复习项（排期在未来 -> upcoming）
+        assert due["total"] == 2
+        assert due["upcoming_count"] >= 1
+
+        # 复习：提交得分，应更新掌握度与排期
+        items = c.get("/api/review/", headers=headers).json()["items"]
+        rid = items[0]["id"]
+        r = c.post(f"/api/review/{rid}/review", headers=headers,
+                   json={"score": 80})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["review_count"] == 1
+        assert body["mastery_level"] > 0

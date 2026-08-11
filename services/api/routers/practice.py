@@ -9,6 +9,7 @@ from core.deps import get_current_user
 from models.user import User
 from models.learning import PracticeSession, Module, LearningPath, Progress
 from routers.learning import _recalculate_path_progress
+from routers.review import schedule_reviews_after_practice
 
 router = APIRouter(prefix="/api/practice", tags=["practice"])
 
@@ -256,12 +257,14 @@ async def complete_session(
 
     # Update module status and progress if linked to a module
     module_id = session.module_id
+    module_title = None
     if module_id is not None:
         module_result = await db.execute(
             select(Module).where(Module.id == module_id)
         )
         module = module_result.scalar_one_or_none()
         if module:
+            module_title = module.title
             if passed:
                 module.status = "completed"
                 module.progress = 100.0
@@ -323,6 +326,16 @@ async def complete_session(
 
             # Recalculate path progress
             await _recalculate_path_progress(db, module.path_id)
+
+    # 自动生成/更新间隔重复复习项(尽力而为)
+    await schedule_reviews_after_practice(
+        db,
+        current_user.id,
+        module_title,
+        module_id,
+        session.score or 0.0,
+        req.weak_points,
+    )
 
     await db.commit()
     await db.refresh(session)
