@@ -24,7 +24,27 @@ class SubmitAnswer(BaseModel):
     session_id: int
     question_id: int
     answer: str
-    is_correct: bool
+    # is_correct 由客户端上报，但服务端会忽略并基于题目答案密钥重新判定，
+    # 防止学生通过篡改 is_correct 作弊。字段保留仅为向前兼容。
+    is_correct: bool = False
+
+
+def _judge_answer(question: dict, answer: str) -> bool:
+    """服务端判题：对照题目中存储的答案密钥判定对错。
+
+    对单选题（options 存在且 answer 为选项索引字符串）按索引比对；
+    无法判定的题型（如简答题、无答案密钥）返回 None 表示由调用方决定。
+    """
+    key = question.get("answer")
+    options = question.get("options")
+    # 只有存在答案密钥的客观题才能可靠判题
+    if key is None or key == "":
+        return None
+    if options:
+        # 单选题：比对选项索引
+        return str(answer).strip() == str(key).strip()
+    # 带参考答案的客观题（填空/判断）：模糊比对
+    return str(answer).strip().lower() == str(key).strip().lower()
 
 
 class CompleteRequest(BaseModel):
@@ -169,12 +189,26 @@ async def submit_answer(
         )
     await _verify_session_ownership(db, session, current_user)
 
+    # 服务端判题：优先基于题目答案密钥判定，忽略客户端上报的 is_correct
+    server_judged = None
+    question_obj = None
+    for q in session.questions or []:
+        if isinstance(q, dict) and q.get("id") == req.question_id:
+            question_obj = q
+            break
+    if question_obj is not None:
+        server_judged = _judge_answer(question_obj, req.answer)
+
+    # server_judged 为 True/False 时采用服务端判定；无法判定（None）时回退客户端上报值
+    is_correct = req.is_correct if server_judged is None else server_judged
+
     answers = session.answers or []
     answers.append(
         {
             "question_id": req.question_id,
             "answer": req.answer,
-            "is_correct": req.is_correct,
+            "is_correct": is_correct,
+            "judged_by_server": server_judged is not None,
         }
     )
     session.answers = answers
