@@ -98,16 +98,27 @@ export default function AiBuddyPage() {
         role: m.role as 'user' | 'assistant',
         content: m.content,
       }))
-      const res = await aiAPI.chat(trimmed, 'buddy', {
-        user_id: user?.id,
-        username: user?.username,
-      }, history)
-      const assistantMsg: ChatMessage = {
-        role: 'assistant',
-        content: res.response || res.toString() || '（伴学暂时没有回复，请稍后再试）',
-        timestamp: Date.now(),
-      }
-      setMessages(prev => [...prev, assistantMsg])
+
+      // 插入空占位，流式增量填充
+      const assistantId = Date.now() + 1
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: '', timestamp: assistantId },
+      ])
+
+      let acc = ''
+      await aiAPI.chatStream(
+        trimmed,
+        'buddy',
+        { user_id: user?.id, username: user?.username },
+        history,
+        delta => {
+          acc += delta
+          setMessages(prev => prev.map(m =>
+            m.timestamp === assistantId ? { ...m, content: acc } : m
+          ))
+        }
+      )
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : '发送失败'
       setError(errMsg)

@@ -7,7 +7,8 @@ AI Tutor Agent - 智能辅导答疑
 """
 from typing import Optional
 
-from core.llm import chat_completion
+from core.llm import chat_completion, stream_chat
+from core.rag import build_knowledge_context, build_prerequisite_context
 
 TUTOR_SYSTEM_PROMPT = """你是一位经验丰富的 AI 导师，擅长帮助学生理解和掌握知识。
 你的教学原则：
@@ -27,6 +28,26 @@ _LEVEL_DESC = {
 }
 
 
+async def build_chat_messages(
+    message: str, context: Optional[dict] = None, history: Optional[list] = None
+) -> list[dict]:
+    """组装导师对话消息(含 RAG 检索增强)，供普通对话与流式对话共用。"""
+    context_str = ""
+    if context:
+        context_str = f"\n当前学习上下文：{context.get('topic', '')} - {context.get('module', '')}"
+        if context.get("learning_history"):
+            context_str += f"\n学习历史：{context['learning_history']}"
+
+    rag_ctx = await build_knowledge_context(message)
+
+    messages: list[dict] = []
+    for h in history or []:
+        if isinstance(h, dict) and h.get("role") in ("user", "assistant") and h.get("content"):
+            messages.append({"role": h["role"], "content": str(h["content"])})
+    messages.append({"role": "user", "content": f"{context_str}\n{rag_ctx}\n\n学生问题：{message}"})
+    return messages
+
+
 async def tutor_chat(message: str, context: Optional[dict] = None, history: Optional[list] = None) -> str:
     """苏格拉底式教学对话。
 
@@ -41,19 +62,17 @@ async def tutor_chat(message: str, context: Optional[dict] = None, history: Opti
     Returns:
         导师的回复文本。
     """
-    context_str = ""
-    if context:
-        context_str = f"\n当前学习上下文：{context.get('topic', '')} - {context.get('module', '')}"
-        if context.get("learning_history"):
-            context_str += f"\n学习历史：{context['learning_history']}"
-
-    # 组装消息：历史 + 当前问题（历史消息含 context，避免重复插入上下文）
-    messages: list[dict] = []
-    for h in history or []:
-        if isinstance(h, dict) and h.get("role") in ("user", "assistant") and h.get("content"):
-            messages.append({"role": h["role"], "content": str(h["content"])})
-    messages.append({"role": "user", "content": f"{context_str}\n\n学生问题：{message}"})
+    messages = await build_chat_messages(message, context, history)
     return await chat_completion(messages, TUTOR_SYSTEM_PROMPT, agent_type="tutor")
+
+
+async def tutor_chat_stream(
+    message: str, context: Optional[dict] = None, history: Optional[list] = None
+):
+    """流式苏格拉底式对话。"""
+    messages = await build_chat_messages(message, context, history)
+    async for chunk in stream_chat(messages, TUTOR_SYSTEM_PROMPT, agent_type="tutor"):
+        yield chunk
 
 
 async def explain_concept(
@@ -79,9 +98,14 @@ async def explain_concept(
     if context:
         context_hint = f"\n附加背景信息：{context}"
 
+    # RAG：检索概念相关资料 + 前置知识
+    rag_ctx = await build_knowledge_context(topic)
+    prereq_ctx = await build_prerequisite_context(topic)
+
     prompt = (
         f"请用「{level_desc}」水平可以理解的方式，解释以下概念：{topic}\n"
-        f"要求：使用类比和实例，条理清晰，200-400 字。{context_hint}"
+        f"要求：使用类比和实例，条理清晰，200-400 字。{context_hint}\n"
+        f"{rag_ctx}\n{prereq_ctx}"
     )
     messages = [{"role": "user", "content": prompt}]
     result = await chat_completion(messages, TUTOR_SYSTEM_PROMPT, agent_type="tutor")

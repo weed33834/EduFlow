@@ -98,16 +98,28 @@ export default function AiTutorPage() {
         role: m.role as 'user' | 'assistant',
         content: m.content,
       }))
-      const res = await aiAPI.chat(trimmed, 'tutor', {
-        user_id: user?.id,
-        username: user?.username,
-      }, history)
-      const assistantMsg: ChatMessage = {
-        role: 'assistant',
-        content: res.response || res.toString() || '（导师暂时没有回复，请稍后再试）',
-        timestamp: Date.now(),
-      }
-      setMessages(prev => [...prev, assistantMsg])
+
+      // 先插入空的助手消息占位，用于流式增量填充
+      const assistantId = Date.now() + 1
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: '', timestamp: assistantId },
+      ])
+
+      let acc = ''
+      await aiAPI.chatStream(
+        trimmed,
+        'tutor',
+        { user_id: user?.id, username: user?.username },
+        history,
+        delta => {
+          acc += delta
+          // 用副本替换占位消息，触发重新渲染
+          setMessages(prev => prev.map(m =>
+            m.timestamp === assistantId ? { ...m, content: acc } : m
+          ))
+        }
+      )
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : '发送失败'
       setError(errMsg)

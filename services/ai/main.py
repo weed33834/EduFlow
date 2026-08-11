@@ -18,6 +18,7 @@ from typing import Any, Optional, Union
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from core.config import settings
@@ -31,6 +32,8 @@ from agents import (
     evaluate_answer,
     generate_learning_path,
     adjust_plan,
+    tutor_chat_stream,
+    buddy_chat_stream,
 )
 
 app = FastAPI(
@@ -165,6 +168,42 @@ async def agent_chat(req: ChatRequest):
         "agent_type": req.agent_type,
         "llm_available": is_llm_available(),
     }
+
+
+# ---------------------------------------------------------------------------
+# 聊天（流式）
+# ---------------------------------------------------------------------------
+
+async def _stream_chat_events(message: str, agent_type: str, context: dict, history: list):
+    """按 SSE 格式产出流式对话事件。"""
+    try:
+        if agent_type == "tutor":
+            stream = tutor_chat_stream(message, context, history)
+        else:
+            stream = buddy_chat_stream(message, context, history)
+        async for chunk in stream:
+            yield f"data: {chunk}\n\n"
+    except Exception as e:  # noqa: BLE001
+        yield f"data: [error] {e}\n\n"
+    yield "data: [done]\n\n"
+
+
+@app.post("/api/agents/chat/stream")
+async def agent_chat_stream(req: ChatRequest):
+    """流式智能聊天（SSE）。支持 tutor 与 buddy，返回增量内容。"""
+    if req.agent_type not in SUPPORTED_CHAT_AGENTS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid agent_type: {req.agent_type}. "
+                f"Supported types: {', '.join(SUPPORTED_CHAT_AGENTS)}"
+            ),
+        )
+    return StreamingResponse(
+        _stream_chat_events(req.message, req.agent_type, req.context, req.history),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ---------------------------------------------------------------------------

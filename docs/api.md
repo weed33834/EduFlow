@@ -684,6 +684,9 @@ POST /api/agents/chat
 | message | string | - | 用户消息 |
 | agent_type | string | `"tutor"` | 智能体类型（tutor / buddy），无效值返回 400 |
 | context | object | `{}` | 上下文信息 |
+| history | array | `[]` | 多轮会话历史 `[{role, content}]` |
+
+> 说明：tutor / buddy 已接入本地知识库检索(RAG)，会先检索相关知识再生成回答，无 LLM 时也能给出有依据的降级回复。
 
 **响应**：
 
@@ -693,6 +696,15 @@ POST /api/agents/chat
   "agent_type": "tutor",
   "llm_available": true
 }
+```
+
+### 6.2.1 流式对话
+
+```
+POST /api/agents/chat/stream
+```
+
+与 `/api/agents/chat` 请求体相同，返回 SSE(`text/event-stream`) 增量内容，`data: ` 事件，结束标记 `data: [done]`。前端经 API 网关 `POST /api/ai/chat/stream` 使用。
 ```
 
 ### 6.3 概念解释

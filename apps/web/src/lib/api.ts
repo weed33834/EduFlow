@@ -445,6 +445,48 @@ export const aiAPI = {
       method: 'POST',
       body: JSON.stringify({ goal, level, duration_weeks: durationWeeks, difficulty, context }),
     }),
+
+  /** 流式对话(SSE)：通过 onDelta 回调接收增量文本 */
+  chatStream: (
+    message: string,
+    agentType: 'tutor' | 'buddy' = 'tutor',
+    context: Record<string, unknown> = {},
+    history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+    onDelta: (delta: string) => void
+  ) => {
+    const token = getToken()
+    return fetch('/api/ai/chat/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ message, agent_type: agentType, context, history }),
+    }).then(async res => {
+      if (!res.ok || !res.body) throw new Error('流式连接失败')
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        let idx = buffer.indexOf('\n\n')
+        while (idx >= 0) {
+          const event = buffer.slice(0, idx)
+          buffer = buffer.slice(idx + 2)
+          const lines = event.split('\n').filter(l => l.startsWith('data: '))
+          for (const line of lines) {
+            const data = line.slice(6)
+            if (data === '[done]') return
+            if (data.startsWith('[error]')) throw new Error(data.slice(7))
+            onDelta(data)
+          }
+          idx = buffer.indexOf('\n\n')
+        }
+      }
+    })
+  },
 }
 
 /** 保留兼容旧调用 */

@@ -1,6 +1,7 @@
 from typing import Optional, Union
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 import httpx
 
@@ -98,6 +99,36 @@ async def ai_chat(
     payload = req.model_dump()
     payload["user_id"] = current_user.id
     return await _proxy_to_ai("/api/agents/chat", payload)
+
+
+@router.post("/chat/stream")
+async def ai_chat_stream(
+    req: ChatRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """流式对话：代理到 AI 服务并转发 SSE 增量。"""
+    payload = req.model_dump()
+    payload["user_id"] = current_user.id
+    url = f"{settings.AI_SERVICE_URL}/api/agents/chat/stream"
+
+    async def gen():
+        try:
+            async with httpx.AsyncClient(timeout=None) as client:
+                async with client.stream("POST", url, json=payload) as resp:
+                    if resp.status_code >= 400:
+                        yield f"data: [error] AI service error {resp.status_code}\n\n"
+                        return
+                    async for chunk in resp.aiter_text():
+                        if chunk:
+                            yield chunk
+        except httpx.ConnectError:
+            yield "data: [error] AI service unavailable\n\n"
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/generate-questions")

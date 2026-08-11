@@ -32,6 +32,29 @@ def _extract_user_message(messages: list[dict]) -> str:
     return ""
 
 
+# 上下文管理：单条消息最大字符数与最大历史条数，防止超出 token 限制
+_MAX_MSG_CHARS = 4000
+_MAX_HISTORY_TURNS = 20
+
+
+def _trim_messages(messages: list[dict]) -> list[dict]:
+    """截断过长的消息内容，并只保留最近 N 条历史(不含系统提示)。"""
+    trimmed = []
+    for m in messages:
+        if m.get("role") == "system":
+            trimmed.append(m)
+            continue
+        content = m.get("content", "")
+        if isinstance(content, str) and len(content) > _MAX_MSG_CHARS:
+            content = content[: _MAX_MSG_CHARS] + "…(内容过长已截断)"
+            m = {**m, "content": content}
+        trimmed.append(m)
+    # 保留系统提示 + 最近若干条对话
+    head = [m for m in trimmed if m.get("role") == "system"]
+    tail = [m for m in trimmed if m.get("role") != "system"][-_MAX_HISTORY_TURNS * 2 :]
+    return head + tail
+
+
 # ---------------------------------------------------------------------------
 # 降级回复模板（按 agent 类型区分风格）
 # ---------------------------------------------------------------------------
@@ -157,6 +180,7 @@ async def chat_completion(
     if system_prompt:
         full_messages.append({"role": "system", "content": system_prompt})
     full_messages.extend(messages)
+    full_messages = _trim_messages(full_messages)
 
     resp = await client.chat.completions.create(
         model=settings.LLM_MODEL,
@@ -184,6 +208,7 @@ async def stream_chat(
     if system_prompt:
         full_messages.append({"role": "system", "content": system_prompt})
     full_messages.extend(messages)
+    full_messages = _trim_messages(full_messages)
 
     stream = await client.chat.completions.create(
         model=settings.LLM_MODEL,
