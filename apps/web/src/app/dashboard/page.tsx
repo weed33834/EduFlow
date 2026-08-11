@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   BookOpen, Brain, Clock, Target, TrendingUp, Award, BarChart3,
-  GraduationCap, ChevronRight, Sparkles, Zap, AlertCircle, RefreshCw, ArrowRight,
+  GraduationCap, ChevronRight, Sparkles, Zap, AlertCircle, RefreshCw, ArrowRight, RefreshCcw,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { learningAPI, progressAPI, type LearningPath, type ProgressOverview } from '@/lib/api'
+import { learningAPI, progressAPI, reviewAPI, type LearningPath, type ProgressOverview, type ReviewDue } from '@/lib/api'
 import { formatDuration, getDifficultyColor, getDifficultyLabel } from '@/lib/utils'
 
 export default function DashboardPage() {
@@ -17,6 +17,7 @@ export default function DashboardPage() {
 
   const [paths, setPaths] = useState<LearningPath[]>([])
   const [progress, setProgress] = useState<ProgressOverview | null>(null)
+  const [review, setReview] = useState<ReviewDue | null>(null)
   const [fetching, setFetching] = useState(true)
   const [error, setError] = useState('')
 
@@ -29,14 +30,17 @@ export default function DashboardPage() {
     setFetching(true)
     setError('')
     try {
-      const [pathsData, progressData] = await Promise.allSettled([
+      const [pathsData, progressData, reviewData] = await Promise.allSettled([
         learningAPI.getPaths(),
         progressAPI.getMyProgress(),
+        reviewAPI.getDue(),
       ])
       if (pathsData.status === 'fulfilled') setPaths(pathsData.value || [])
       else setPaths([])
       if (progressData.status === 'fulfilled') setProgress(progressData.value)
       else setProgress(null)
+      if (reviewData.status === 'fulfilled') setReview(reviewData.value)
+      else setReview(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载失败')
     } finally {
@@ -177,8 +181,31 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* 右侧：建议 + 快捷入口 */}
+        {/* 右侧：复习 + 建议 + 快捷入口 */}
         <div className="space-y-6">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-3">
+              <RefreshCcw className="w-5 h-5 text-brand-600" /> 待复习
+            </h2>
+            <Link href="/review" className="glass-card p-5 flex items-center justify-between hover:-translate-y-0.5 transition-all duration-300 group block">
+              <div>
+                <div className="text-3xl font-bold text-gray-900">
+                  {review ? review.due_count : 0}
+                </div>
+                <div className="text-sm text-gray-500 mt-1">个知识点今日待复习</div>
+              </div>
+              <div className="flex items-center gap-1 text-sm text-brand-600 font-medium">
+                {review && review.due_count > 0 ? '去复习' : '查看'}
+                <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+              </div>
+            </Link>
+            {review && review.due_count > 0 && (
+              <p className="text-xs text-amber-600 mt-2 px-1">
+                根据记忆曲线，建议尽快完成今天的复习任务，巩固薄弱点。
+              </p>
+            )}
+          </div>
+
           <div>
             <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-3">
               <TrendingUp className="w-5 h-5 text-teal-500" /> 学习建议

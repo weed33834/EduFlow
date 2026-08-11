@@ -367,6 +367,42 @@ export const progressAPI = {
   getOverview: () => request<ProgressOverview>('/progress/overview'),
 }
 
+/** 间隔重复复习项 */
+export interface ReviewItem {
+  id: number
+  module_id?: number | null
+  topic: string
+  mastery_level: number
+  review_count: number
+  last_score?: number | null
+  stability: number
+  difficulty: number
+  due_at?: string | null
+  last_reviewed_at?: string | null
+  status: 'due' | 'upcoming'
+}
+
+export interface ReviewDue {
+  due_count: number
+  upcoming_count: number
+  total: number
+  due_items: ReviewItem[]
+  upcoming_items: ReviewItem[]
+}
+
+/** 复习 API */
+export const reviewAPI = {
+  getDue: () => request<ReviewDue>('/review/due'),
+
+  getAll: () => request<{ items: ReviewItem[] }>('/review/'),
+
+  submitReview: (id: number, score: number) =>
+    request<ReviewItem>(`/review/${id}/review`, {
+      method: 'POST',
+      body: JSON.stringify({ score }),
+    }),
+}
+
 /** AI API */
 export const aiAPI = {
   chat: (

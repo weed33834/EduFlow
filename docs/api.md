@@ -585,6 +585,49 @@ POST /api/ai/plan
 
 ---
 
+## 5.6 复习(间隔重复) API
+
+对应文件 `services/api/routers/review.py`。练习完成后会自动为主题模块与薄弱点生成复习项，
+按 FSRS 启发式(调用 Engine)计算下次复习时间；引擎不可用时降级为内置排期。
+
+### 5.6.1 待复习列表
+
+`GET /api/review/due`（需登录）
+
+返回 `{ due_count, upcoming_count, total, due_items, upcoming_items }`，每项含 `topic / mastery_level / review_count / stability / due_at / status(due|upcoming)`。
+
+### 5.6.2 全部复习项
+
+`GET /api/review/`（需登录）
+
+返回 `{ items: [...] }`。
+
+### 5.6.3 完成一次复习
+
+`POST /api/review/{review_id}/review`（需登录）
+
+```json
+{ "score": 80 }   // 0-100 自评得分
+```
+
+按得分更新掌握度与复习次数，重新调用 Engine 排期下一次复习时间。
+
+---
+
+## 5.7 Engine 网关(经 API)
+
+对应文件 `services/api/routers/engine.py`。将学习引擎能力带鉴权地暴露给前端：
+
+| 端点 | 说明 |
+|------|------|
+| `POST /api/engine/next-review` | 计算单个知识点下次复习时间，返回 `due_at` |
+| `POST /api/engine/knowledge-tracing` | 批量知识追踪，识别薄弱点 |
+| `POST /api/engine/estimate-duration` | 估算学习时长 |
+
+引擎服务不可用时返回 `503`，调用方应优雅降级。
+
+---
+
 ## 6. AI 服务 API（端口 8100）
 
 对应文件 `services/ai/main.py`。AI 服务直接暴露智能体接口，可被 API 服务代理调用，也可直接访问。

@@ -14,6 +14,7 @@ import {
   LogOut,
   Menu,
   X,
+  RefreshCw,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { getInitials, cn } from '@/lib/utils'
@@ -21,6 +22,7 @@ import { getInitials, cn } from '@/lib/utils'
 const navItems = [
   { href: '/dashboard', label: '仪表盘', icon: LayoutDashboard },
   { href: '/learning', label: '学习', icon: BookOpen },
+  { href: '/review', label: '复习', icon: RefreshCw },
   { href: '/practice', label: '练习', icon: Brain },
   { href: '/progress', label: '进度', icon: BarChart3 },
   { href: '/ai-tutor', label: 'AI导师', icon: GraduationCap },

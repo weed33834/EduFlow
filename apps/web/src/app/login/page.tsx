@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, FormEvent, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Mail, Lock, ArrowRight, AlertCircle, GraduationCap, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -9,6 +9,8 @@ import { isValidEmail } from '@/lib/utils'
 
 export default function LoginPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirectTo = searchParams.get('redirect') || '/dashboard'
   const { user, loading, login } = useAuth()
 
   const [email, setEmail] = useState('')
@@ -20,8 +22,8 @@ export default function LoginPage() {
 
   // 已登录则跳转
   useEffect(() => {
-    if (!loading && user) router.replace('/dashboard')
-  }, [loading, user, router])
+    if (!loading && user) router.replace(redirectTo)
+  }, [loading, user, router, redirectTo])
 
   const validate = () => {
     const e: { email?: string; password?: string } = {}
@@ -39,7 +41,7 @@ export default function LoginPage() {
     setSubmitting(true)
     try {
       await login(email.trim(), password)
-      router.replace('/dashboard')
+      router.replace(redirectTo)
     } catch (err) {
       setServerError(err instanceof Error ? err.message : '登录失败，请稍后重试')
     } finally {
