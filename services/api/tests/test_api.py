@@ -20,9 +20,12 @@ from main import app  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _fresh_db():
-    """每个测试前重置临时数据库，保证用例相互独立。"""
+    """每个测试前重置临时数据库与内存限流计数，保证用例相互独立。"""
     if os.path.exists(_DB):
         os.remove(_DB)
+    import routers.auth as auth_mod
+
+    auth_mod._attempts.clear()
     yield
 
 
