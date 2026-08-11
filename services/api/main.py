@@ -11,9 +11,10 @@ import models  # noqa: F401
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create database tables on startup
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # 开发环境：自动建表方便快速起步；生产环境请使用 Alembic 迁移(alembic upgrade head)
+    if settings.ENV != "production":
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
     yield
 
 
