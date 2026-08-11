@@ -168,3 +168,46 @@ def test_review_scheduling_after_practice():
         body = r.json()
         assert body["review_count"] == 1
         assert body["mastery_level"] > 0
+
+
+def test_conversation_persistence():
+    # 服务端会话持久化：创建、追加消息、列表、详情、删除
+    with _client() as c:
+        token = _auth(c)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        conv = c.post("/api/conversations/", headers=headers,
+                      json={"agent_type": "tutor"}).json()
+        assert conv["id"] > 0
+        cid = conv["id"]
+
+        # 追加用户与助手消息
+        c.post(f"/api/conversations/{cid}/messages", headers=headers,
+               json={"role": "user", "content": "什么是递归"})
+        c.post(f"/api/conversations/{cid}/messages", headers=headers,
+               json={"role": "assistant", "content": "递归是函数自调用…"})
+
+        detail = c.get(f"/api/conversations/{cid}", headers=headers).json()
+        assert detail["message_count"] == 2
+        assert detail["messages"][0]["role"] == "user"
+        # 首条用户消息自动生成标题
+        assert detail["title"].startswith("什么是递归")
+
+        listed = c.get("/api/conversations/", headers=headers).json()
+        assert len(listed["conversations"]) == 1
+        assert listed["conversations"][0]["last_message"] == "递归是函数自调用…"
+
+        # 越权访问他人会话
+        other = _auth2(c)
+        r = c.get(f"/api/conversations/{cid}", headers={"Authorization": f"Bearer {other}"})
+        assert r.status_code == 404
+
+        d = c.delete(f"/api/conversations/{cid}", headers=headers)
+        assert d.status_code == 200
+
+
+def _auth2(client: TestClient) -> str:
+    client.post("/api/auth/register",
+                json={"email": "t2@t.com", "username": "tester2", "password": "pass1234"})
+    return client.post("/api/auth/login",
+                       json={"email": "t2@t.com", "password": "pass1234"}).json()["access_token"]

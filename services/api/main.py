@@ -6,6 +6,7 @@ from core.database import engine, Base
 from routers import auth, learning, progress, practice, ai
 from routers import engine as engine_router
 from routers import review as review_router
+from routers import conversations as conversations_router
 # Import models so they are registered with Base.metadata before table creation
 import models  # noqa: F401
 
@@ -45,6 +46,7 @@ app.include_router(practice.router)
 app.include_router(ai.router)
 app.include_router(engine_router.router)
 app.include_router(review_router.router)
+app.include_router(conversations_router.router)
 
 
 @app.get("/api/health")

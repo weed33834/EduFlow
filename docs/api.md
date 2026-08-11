@@ -628,6 +628,22 @@ POST /api/ai/plan
 
 ---
 
+## 5.8 会话持久化 API
+
+对应文件 `services/api/routers/conversations.py`。AI 对话在服务端保存，支持跨设备、断线恢复与多会话管理。
+
+| 端点 | 说明 |
+|------|------|
+| `GET /api/conversations/` | 列出当前用户会话(含最近消息预览) |
+| `POST /api/conversations/` | 创建会话 `{agent_type: tutor\|buddy, title?}` |
+| `GET /api/conversations/{id}` | 会话详情(含全部消息) |
+| `DELETE /api/conversations/{id}` | 删除会话 |
+| `POST /api/conversations/{id}/messages` | 追加消息 `{role: user\|assistant, content}` |
+
+前端发送前把用户消息写入会话，收到回复后把助手消息写入；首条用户消息自动生成标题。
+
+---
+
 ## 6. AI 服务 API（端口 8100）
 
 对应文件 `services/ai/main.py`。AI 服务直接暴露智能体接口，可被 API 服务代理调用，也可直接访问。
@@ -687,6 +703,7 @@ POST /api/agents/chat
 | history | array | `[]` | 多轮会话历史 `[{role, content}]` |
 
 > 说明：tutor / buddy 已接入本地知识库检索(RAG)，会先检索相关知识再生成回答，无 LLM 时也能给出有依据的降级回复。
+> 所有输入经内容安全过滤(`core/safety.py`)：检测提示注入、敏感信息(证件号/手机号/卡号)与超长输入，命中则返回拒绝文案。
 
 **响应**：
 

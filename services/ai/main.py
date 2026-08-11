@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from core.config import settings
 from core.llm import is_llm_available
+from core.safety import check_input_safety
 from agents import (
     tutor_chat,
     explain_concept,
@@ -164,6 +165,11 @@ async def agent_chat(req: ChatRequest):
             ),
         )
 
+    # 输入安全检查
+    blocked = check_input_safety(req.message)
+    if blocked:
+        return {"response": blocked, "agent_type": req.agent_type, "llm_available": is_llm_available()}
+
     if req.agent_type == "tutor":
         result = await tutor_chat(req.message, req.context, req.history)
     else:
@@ -205,6 +211,17 @@ async def agent_chat_stream(req: ChatRequest):
                 f"Supported types: {', '.join(SUPPORTED_CHAT_AGENTS)}"
             ),
         )
+
+    blocked = check_input_safety(req.message)
+    if blocked:
+        async def _blocked_stream():
+            yield f"data: {blocked}\n\n"
+            yield "data: [done]\n\n"
+        return StreamingResponse(
+            _blocked_stream(), media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     return StreamingResponse(
         _stream_chat_events(req.message, req.agent_type, req.context, req.history),
         media_type="text/event-stream",

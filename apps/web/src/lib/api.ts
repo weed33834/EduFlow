@@ -403,6 +403,50 @@ export const reviewAPI = {
     }),
 }
 
+/** 服务端会话持久化 */
+export interface Conversation {
+  id: number
+  agent_type: string
+  title: string
+  message_count: number
+  last_message?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface ConversationMessage {
+  id: number
+  role: 'user' | 'assistant'
+  content: string
+  created_at?: string
+}
+
+export interface ConversationDetail extends Conversation {
+  messages: ConversationMessage[]
+}
+
+/** 会话 API */
+export const conversationAPI = {
+  list: () => request<{ conversations: Conversation[] }>('/conversations/'),
+
+  create: (agentType: 'tutor' | 'buddy', title = '') =>
+    request<Conversation>('/conversations/', {
+      method: 'POST',
+      body: JSON.stringify({ agent_type: agentType, title }),
+    }),
+
+  get: (id: number) => request<ConversationDetail>(`/conversations/${id}`),
+
+  remove: (id: number) =>
+    request<void>(`/conversations/${id}`, { method: 'DELETE', skipJson: true }),
+
+  appendMessage: (id: number, role: 'user' | 'assistant', content: string) =>
+    request<ConversationMessage>(`/conversations/${id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ role, content }),
+    }),
+}
+
 /** AI API */
 export const aiAPI = {
   chat: (
