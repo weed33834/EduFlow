@@ -22,11 +22,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS - allow all origins
+# CORS - 使用配置中的允许来源，避免硬编码。
+# 注意：allow_origins 与 allow_credentials=True 不能混用通配符 "*"，
+# 故当配置为 ["*"] 时降级为不携带凭据（浏览器要求）。
+_allow_origins = settings.CORS_ORIGINS or ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_allow_origins,
+    allow_credentials="*" not in _allow_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

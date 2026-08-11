@@ -71,8 +71,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://api:8000
-      NEXT_PUBLIC_AI_API_URL: http://ai-service:8100
+      # rewrites 服务端运行时读取，指向 compose 网络内的 API 服务
+      API_UPSTREAM: http://api:8000
     depends_on:
       - api
 

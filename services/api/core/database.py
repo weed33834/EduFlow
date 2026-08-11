@@ -3,10 +3,17 @@ from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import event
 from core.config import settings
 
+# `check_same_thread` 仅适用于 SQLite；PostgreSQL(asyncpg) 不接受该参数，
+# 因此仅当数据库为 SQLite 时才注入该连接参数。
+_engine_kwargs = {}
+if settings.DATABASE_URL.startswith("sqlite"):
+    _engine_kwargs["connect_args"] = {"check_same_thread": False}
+
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
-    connect_args={"check_same_thread": False},
+    pool_pre_ping=True,
+    **_engine_kwargs,
 )
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
