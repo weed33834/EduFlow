@@ -4,8 +4,8 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        brand: { 50: '#F2F7FF', 100: '#E5EAFF', 200: '#A9AEFF', 500: '#6F6FFF', 600: '#4B3FE3', 700: '#3C2ECA', 900: '#1A1759' },
-        accent: { 400: '#27D2BF', 500: '#1BBFA9' },
+        brand: { 50: '#EEF2FF', 100: '#E0E7FF', 200: '#C7D2FE', 300: '#A5B4FC', 400: '#818CF8', 500: '#6366F1', 600: '#4F46E5', 700: '#4338CA', 800: '#3730A3', 900: '#312E81' },
+        accent: { 400: '#2DD4BF', 500: '#14B8A6', 600: '#0D9488' },
       },
       fontFamily: { sans: ['"PingFang SC"', '"Microsoft YaHei"', 'system-ui', 'sans-serif'] },
       animation: { 'fade-in': 'fadeIn 0.6s ease-out', 'slide-up': 'slideUp 0.5s ease-out' },

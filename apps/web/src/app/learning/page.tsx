@@ -421,7 +421,7 @@ export default function LearningPage() {
                   <div className="flex items-center gap-3">
                     <div className="flex-1 progress-track">
                       <div
-                        className="h-full bg-gradient-to-r from-brand-600 to-purple-500 rounded-full transition-all duration-500"
+                        className="h-full bg-brand-500 rounded-full transition-all duration-500"
                         style={{ width: `${progress}%` }}
                       />
                     </div>

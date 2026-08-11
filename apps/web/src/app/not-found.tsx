@@ -19,7 +19,7 @@ export default function NotFound() {
         </div>
 
         {/* 图标 */}
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-600 to-purple-700 flex items-center justify-center mx-auto mb-6 shadow-lg">
+        <div className="w-16 h-16 rounded-2xl bg-brand-600 flex items-center justify-center mx-auto mb-6 shadow-lg">
           <Search className="w-8 h-8 text-white" />
         </div>
 

@@ -9,7 +9,6 @@ import {
   Brain,
   BarChart3,
   GraduationCap,
-  Users,
   Settings,
   LogOut,
   Menu,
@@ -25,8 +24,7 @@ const navItems = [
   { href: '/review', label: '复习', icon: RefreshCw },
   { href: '/practice', label: '练习', icon: Brain },
   { href: '/progress', label: '进度', icon: BarChart3 },
-  { href: '/ai-tutor', label: 'AI导师', icon: GraduationCap },
-  { href: '/ai-buddy', label: 'AI伙伴', icon: Users },
+  { href: '/ai-tutor', label: 'AI助手', icon: GraduationCap },
 ]
 
 export default function Navbar() {
@@ -48,7 +46,7 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 flex-shrink-0">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-600 to-purple-700 flex items-center justify-center shadow-sm">
+          <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center shadow-sm">
             <span className="text-white font-bold text-sm">EF</span>
           </div>
           <span className="font-bold text-lg text-gray-900">EduFlow</span>
@@ -225,7 +223,7 @@ function Avatar({ user }: { user: { avatar_url?: string; display_name?: string; 
   }
   const initials = getInitials(user.display_name || user.username)
   return (
-    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold">
+    <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center text-white text-sm font-semibold">
       {initials}
     </div>
   )

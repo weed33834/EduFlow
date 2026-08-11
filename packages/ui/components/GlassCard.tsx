@@ -1,16 +1,17 @@
 import { cn } from '../utils'
 
-interface GlassCardProps {
+interface CardProps {
   children: React.ReactNode
   className?: string
   hover?: boolean
 }
 
-export default function GlassCard({ children, className, hover = true }: GlassCardProps) {
+/** 统一卡片容器：干净的实心卡片 */
+export default function GlassCard({ children, className, hover = true }: CardProps) {
   return (
     <div className={cn(
-      'bg-white/80 backdrop-blur-xl border border-white/60 rounded-2xl shadow-lg',
-      hover && 'hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300',
+      'bg-white border border-gray-200 rounded-2xl shadow-sm',
+      hover && 'hover:shadow-md hover:border-gray-300 transition-all duration-200',
       className
     )}>
       {children}

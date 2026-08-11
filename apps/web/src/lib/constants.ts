@@ -44,9 +44,9 @@ export const DIFFICULTY_OPTIONS = DIFFICULTY_LEVELS.map(d => ({ value: d.value, 
 
 /** AI 智能体配置 */
 export const AI_AGENTS = [
-  { id: 'tutor', name: 'AI 导师', icon: '🎓', desc: '按需辅导答疑' },
-  { id: 'buddy', name: 'AI 伴学', icon: '🤝', desc: '协同练习对话' },
-  { id: 'examiner', name: 'AI 出题者', icon: '📝', desc: '自适应出题' },
+  { id: 'tutor', name: 'AI 导师', icon: 'tutor', desc: '按需辅导答疑' },
+  { id: 'buddy', name: 'AI 伴学', icon: 'buddy', desc: '协同练习对话' },
+  { id: 'examiner', name: 'AI 出题者', icon: 'examiner', desc: '自适应出题' },
 ] as const
 
 /** localStorage 键名 */

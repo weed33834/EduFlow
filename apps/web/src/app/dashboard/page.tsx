@@ -77,10 +77,10 @@ export default function DashboardPage() {
   const suggestions = buildSuggestions(paths, progress)
 
   const quickEntries = [
-    { icon: BookOpen, label: '学习空间', desc: '管理学习路径与模块', href: '/learning', color: 'from-purple-500 to-indigo-500' },
-    { icon: Brain, label: '开始练习', desc: 'AI 出题，即时反馈', href: '/practice', color: 'from-teal-400 to-cyan-500' },
-    { icon: BarChart3, label: '学习进度', desc: '查看进度与薄弱点', href: '/progress', color: 'from-blue-500 to-indigo-500' },
-    { icon: GraduationCap, label: 'AI 导师', desc: '随时提问，按需辅导', href: '/ai-tutor', color: 'from-brand-600 to-purple-700' },
+    { icon: BookOpen, label: '学习空间', desc: '管理学习路径与模块', href: '/learning', color: 'bg-brand-600' },
+    { icon: Brain, label: '开始练习', desc: '创建练习，服务端判题', href: '/practice', color: 'bg-teal-600' },
+    { icon: RefreshCw, label: '间隔复习', desc: '按记忆规律复习', href: '/review', color: 'bg-blue-600' },
+    { icon: GraduationCap, label: 'AI 助手', desc: '导师与伴学', href: '/ai-tutor', color: 'bg-indigo-600' },
   ]
 
   return (
@@ -89,7 +89,7 @@ export default function DashboardPage() {
       <div className="mb-8 flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
-            欢迎回来，{user.display_name || user.username} 👋
+            欢迎回来，{user.display_name || user.username}
           </h1>
           <p className="text-gray-500 mt-1">
             继续你的学习之旅{paths.length > 0 ? `，当前有 ${paths.length} 个学习路径` : ''}
@@ -169,7 +169,7 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-3">
                     <div className="flex-1 progress-track">
                       <div
-                        className="h-full bg-gradient-to-r from-brand-600 to-purple-500 rounded-full transition-all duration-500"
+                        className="h-full bg-brand-500 rounded-full transition-all duration-500"
                         style={{ width: `${prog}%` }}
                       />
                     </div>
@@ -235,7 +235,7 @@ export default function DashboardPage() {
                   href={q.href}
                   className="glass-card p-4 hover:-translate-y-0.5 transition-all duration-300 group"
                 >
-                  <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${q.color} flex items-center justify-center mb-2 group-hover:scale-110 transition-transform`}>
+                  <div className={`w-9 h-9 rounded-lg ${q.color} flex items-center justify-center mb-2 group-hover:scale-110 transition-transform`}>
                     <q.icon className="w-5 h-5 text-white" />
                   </div>
                   <div className="text-sm font-semibold text-gray-900">{q.label}</div>

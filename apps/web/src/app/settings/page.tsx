@@ -271,7 +271,7 @@ function AvatarPreview({
 
   const initials = getInitials(displayName || username)
   return (
-    <div className="w-20 h-20 rounded-full bg-gradient-to-br from-brand-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold border-2 border-white shadow-md">
+    <div className="w-20 h-20 rounded-full bg-brand-600 flex items-center justify-center text-white text-2xl font-bold border-2 border-white shadow-md">
       {initials}
     </div>
   )

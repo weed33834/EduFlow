@@ -186,9 +186,9 @@ export default function ProgressPage() {
                         <div
                           className={cn(
                             'h-full rounded-full transition-all',
-                            r.completion >= 80 ? 'bg-gradient-to-r from-teal-400 to-green-500'
-                              : r.completion >= 40 ? 'bg-gradient-to-r from-brand-600 to-purple-500'
-                              : 'bg-gradient-to-r from-amber-400 to-orange-500'
+                            r.completion >= 80 ? 'bg-teal-500'
+                              : r.completion >= 40 ? 'bg-brand-500'
+                              : 'bg-amber-500'
                           )}
                           style={{ width: `${Math.max(2, r.completion)}%` }}
                         />

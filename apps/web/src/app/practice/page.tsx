@@ -307,7 +307,7 @@ export default function PracticePage() {
         <div className="glass-card p-6 md:p-8">
           <div className="progress-track mb-6">
             <div
-              className="h-full bg-gradient-to-r from-brand-600 to-purple-500 rounded-full transition-all"
+              className="h-full bg-brand-500 rounded-full transition-all"
               style={{ width: `${((current + (showFeedback ? 1 : 0)) / questions.length) * 100}%` }}
             />
           </div>

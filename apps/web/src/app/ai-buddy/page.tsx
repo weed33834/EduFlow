@@ -107,7 +107,7 @@ export default function AiBuddyPage() {
             <Link href="/dashboard" className="lg:hidden w-9 h-9 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100">
               <ChevronLeft className="w-5 h-5" />
             </Link>
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center shadow-md">
+            <div className="w-11 h-11 rounded-xl bg-teal-500 flex items-center justify-center shadow-md">
               <Users className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -117,11 +117,19 @@ export default function AiBuddyPage() {
           </div>
           <button
             onClick={newConversation}
-            className="w-9 h-9 rounded-full flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+            className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
             title="新对话"
           >
             <Trash2 className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* 切换：AI导师 / AI伴学 */}
+        <div className="px-4 pb-2 -mt-1 flex-shrink-0">
+          <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+            <Link href="/ai-tutor" className="px-3 py-1.5 text-sm font-medium rounded-md text-gray-500 hover:text-gray-700">AI 导师</Link>
+            <Link href="/ai-buddy" className="px-3 py-1.5 text-sm font-medium rounded-md bg-white text-teal-600 shadow-sm">AI 伴学</Link>
+          </div>
         </div>
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-4 px-4 py-4">
@@ -129,7 +137,7 @@ export default function AiBuddyPage() {
 
           {sending && (
             <div className="flex items-start gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center flex-shrink-0">
+              <div className="w-8 h-8 rounded-lg bg-teal-500 flex items-center justify-center flex-shrink-0">
                 <Users className="w-4 h-4 text-white" />
               </div>
               <div className="glass-card px-4 py-3 flex items-center gap-2">
@@ -199,7 +207,7 @@ function MessageBubble({ message }: { message: ChatMsg }) {
           <UserIcon className="w-4 h-4 text-gray-500" />
         </div>
       ) : (
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center flex-shrink-0">
+        <div className="w-8 h-8 rounded-lg bg-teal-500 flex items-center justify-center flex-shrink-0">
           <Heart className="w-4 h-4 text-white" />
         </div>
       )}

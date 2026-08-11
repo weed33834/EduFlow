@@ -92,7 +92,7 @@ export default function ReviewPage() {
       ) : due.length === 0 ? (
         <div className="glass-card p-10 text-center empty-state">
           <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
-          <p className="text-lg font-semibold text-gray-700 mb-1">今日复习已完成 🎉</p>
+          <p className="text-lg font-semibold text-gray-700 mb-1">今日复习已完成</p>
           <p className="text-gray-500">没有到期的复习任务，继续保持学习节奏。</p>
         </div>
       ) : (
