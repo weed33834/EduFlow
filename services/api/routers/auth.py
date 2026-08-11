@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from core.database import get_db
@@ -9,12 +9,42 @@ from models.user import User
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+# 用户名允许的字符：字母、数字、下划线、点、短横线，3-32 位
+_USERNAME_RE = r"^[A-Za-z0-9_.-]{3,32}$"
+
 
 class RegisterRequest(BaseModel):
     email: str
     username: str
     password: str
     display_name: str = ""
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        v = (v or "").strip().lower()
+        if "@" not in v:
+            raise ValueError("邮箱格式不正确")
+        return v
+
+    @field_validator("username")
+    @classmethod
+    def _validate_username(cls, v: str) -> str:
+        import re
+
+        v = (v or "").strip()
+        if not re.fullmatch(_USERNAME_RE, v):
+            raise ValueError("用户名需为 3-32 位字母、数字、下划线、点或短横线")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("密码长度至少 8 位")
+        if not any(c.isalpha() for c in v) or not any(c.isdigit() for c in v):
+            raise ValueError("密码必须同时包含字母和数字")
+        return v
 
 
 class LoginRequest(BaseModel):
@@ -77,7 +107,7 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login", response_model=TokenResponse)
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == req.email))
+    result = await db.execute(select(User).where(User.email == req.email.strip().lower()))
     user = result.scalar_one_or_none()
     if not user or not verify_password(req.password, user.hashed_password):
         raise HTTPException(

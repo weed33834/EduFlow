@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     APP_NAME: str = "EduFlow API"
     VERSION: str = "0.1.0"
     DEBUG: bool = False
+    # 运行环境：development / production。production 下强制使用非默认密钥。
+    ENV: str = "development"
 
     # SQLite database
     DATABASE_URL: str = "sqlite+aiosqlite:///./eduflow.db"

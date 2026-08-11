@@ -4,6 +4,13 @@ import bcrypt
 from jose import jwt
 from core.config import settings
 
+# 生产环境禁止使用默认密钥，防止 JWT 可被伪造
+_DEFAULT_SECRET = "eduflow-secret-key-change-in-production"
+if settings.ENV == "production" and settings.SECRET_KEY == _DEFAULT_SECRET:
+    raise RuntimeError(
+        "SECRET_KEY 仍为默认值，生产环境必须通过环境变量显式设置强随机密钥。"
+    )
+
 
 def hash_password(password: str) -> str:
     """Hash a password using bcrypt directly."""
