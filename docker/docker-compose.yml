@@ -38,6 +38,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       AI_SERVICE_URL: http://ai-service:8100
+      ENGINE_SERVICE_URL: http://engine:8200
     depends_on:
       postgres:
         condition: service_healthy

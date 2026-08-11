@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
 from core.database import engine, Base
 from routers import auth, learning, progress, practice, ai
+from routers import engine as engine_router
 # Import models so they are registered with Base.metadata before table creation
 import models  # noqa: F401
 
@@ -40,6 +41,7 @@ app.include_router(learning.router)
 app.include_router(progress.router)
 app.include_router(practice.router)
 app.include_router(ai.router)
+app.include_router(engine_router.router)
 
 
 @app.get("/api/health")

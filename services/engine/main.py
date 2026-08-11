@@ -7,11 +7,12 @@ from pydantic import BaseModel
 from typing import Optional
 import math
 import json
+from datetime import datetime, timedelta, timezone
 
 app = FastAPI(title="EduFlow Engine", version="0.1.0")
 
 class KnowledgeState(BaseModel):
-    user_id: int
+    user_id: Optional[int] = None
     topic: str
     mastery_level: float = 0.0
     review_count: int = 0
@@ -20,6 +21,10 @@ class KnowledgeState(BaseModel):
 
 class ReviewRequest(BaseModel):
     knowledge_state: KnowledgeState
+    desired_retention: float = 0.9
+
+class TraceRequest(BaseModel):
+    states: list[KnowledgeState]
     desired_retention: float = 0.9
 
 @app.get("/api/health")
@@ -39,9 +44,12 @@ async def calculate_next_review(req: ReviewRequest):
     
     next_interval_hours = stability * 24 * (1.0 - difficulty * 0.3)
     retention = math.exp(-ks.time_since_last_review_hours / (stability * 24))
+    due_at = datetime.now(timezone.utc) + timedelta(hours=next_interval_hours)
     
     return {
+        "topic": ks.topic,
         "next_review_hours": round(next_interval_hours, 1),
+        "due_at": due_at.isoformat(),
         "predicted_retention": round(retention, 3),
         "stability": round(stability, 2),
         "difficulty": round(difficulty, 2),
@@ -49,8 +57,9 @@ async def calculate_next_review(req: ReviewRequest):
     }
 
 @app.post("/api/engine/knowledge-tracing")
-async def trace_knowledge(states: list[KnowledgeState]):
+async def trace_knowledge(req: TraceRequest):
     """Analyze knowledge state across topics and identify weak points"""
+    states = req.states
     results = []
     weak_points = []
     
@@ -72,10 +81,20 @@ async def trace_knowledge(states: list[KnowledgeState]):
         "total_topics": len(states),
     }
 
+class DurationRequest(BaseModel):
+    topic: str
+    difficulty: str = "medium"
+    depth: str = "standard"
+
 @app.post("/api/engine/estimate-duration")
-async def estimate_duration(topic: str, difficulty: str = "medium", depth: str = "standard"):
+async def estimate_duration(req: DurationRequest):
     """Estimate learning time for a topic"""
     base = {"beginner": 30, "easy": 45, "medium": 60, "hard": 90, "expert": 120}
     depth_mult = {"overview": 0.5, "standard": 1.0, "deep": 2.0}
-    minutes = base.get(difficulty, 60) * depth_mult.get(depth, 1.0)
-    return {"topic": topic, "estimated_minutes": int(minutes), "difficulty": difficulty, "depth": depth}
+    minutes = base.get(req.difficulty, 60) * depth_mult.get(req.depth, 1.0)
+    return {
+        "topic": req.topic,
+        "estimated_minutes": int(minutes),
+        "difficulty": req.difficulty,
+        "depth": req.depth,
+    }

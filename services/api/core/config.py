@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # AI service
     AI_SERVICE_URL: str = "http://localhost:8100"
 
+    # Learning engine (FSRS 知识追踪 / 间隔重复)
+    ENGINE_SERVICE_URL: str = "http://localhost:8200"
+
     # Learning configuration
     PASS_SCORE_THRESHOLD: int = 60
 
