@@ -11,7 +11,7 @@ from models.user import User
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
-AI_TIMEOUT = 60.0
+AI_TIMEOUT = 180.0
 
 
 class ChatRequest(BaseModel):
