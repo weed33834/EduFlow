@@ -56,6 +56,35 @@ function saveHistory(list: LocalSession[]) {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, 50)))
 }
 
+/** 本地兜底题库：AI 出题超时/失败时立即返回，保证练习永不卡死 */
+const FALLBACK_BANK: Array<{ q: string; o: string[]; a: number; e: string; d: string }> = [
+  { q: '下列哪个不是 Python 的数据类型？', o: ['整数 int', '浮点 float', '字符 char', '字符串 str'], a: 2, e: 'Python 没有独立的 char 类型，字符用长度为 1 的字符串表示。', d: 'easy' },
+  { q: '执行 `print(2 ** 3)` 的输出是？', o: ['6', '8', '9', '23'], a: 1, e: '** 是幂运算符，2 的 3 次方等于 8。', d: 'easy' },
+  { q: '下列哪种数据结构是无序且不重复的？', o: ['列表', '元组', '字典', '集合'], a: 3, e: '集合 set 存储唯一元素且无序，常用于去重。', d: 'medium' },
+  { q: '关于函数参数，下列哪项正确？', o: ['默认参数必须放在非默认参数之后', '函数必须有 return', '参数只能是位置参数', '不能有多个参数'], a: 0, e: '默认参数必须位于所有非默认参数之后，否则语法错误。', d: 'medium' },
+  { q: '`s = "hello"`，`s[1]` 的值是？', o: ['h', 'e', 'l', 'o'], a: 1, e: '字符串索引从 0 开始，s[1] 是第 2 个字符 e。', d: 'easy' },
+]
+
+function localQuestions(topic: string, count: number): NormalizedQuestion[] {
+  const picked = FALLBACK_BANK.slice(0, Math.max(count, 1))
+  return picked.map((it, idx) => ({
+    id: idx + 1,
+    question: `【${topic || '练习'}】${it.q}`,
+    options: it.o,
+    answerIndex: it.a,
+    explanation: it.e,
+    difficulty: it.d,
+  }))
+}
+
+/** 带超时的 AI 出题：超时抛错，交由调用方用本地题库兜底 */
+async function generateQuestionsWithTimeout(topic: string, difficulty: string, count: number, timeoutMs = 15000) {
+  return Promise.race([
+    aiAPI.generateQuestions(topic, difficulty, count, ''),
+    new Promise<never>((_, rej) => setTimeout(() => rej(new Error('AI 出题超时，已切换为本地题库')), timeoutMs)),
+  ])
+}
+
 /* ---------------- 题目归一化 ---------------- */
 function normalizeQuestions(raw: Question[]): NormalizedQuestion[] {
   return (raw || []).map((q, idx) => {
@@ -173,12 +202,23 @@ export default function PracticePage() {
 
     setGenerating(true)
     setSessionId(null)
+    let qs: NormalizedQuestion[] = []
+    let usedFallback = false
     try {
-      const res = await aiAPI.generateQuestions(topic, difficulty, count, '')
-      const qs = normalizeQuestions(res.questions || [])
+      try {
+        const res = await generateQuestionsWithTimeout(topic, difficulty, count)
+        qs = normalizeQuestions(res.questions || [])
+      } catch {
+        // AI 超时或失败 -> 本地题库兜底，练习依然可用、不卡死
+        usedFallback = true
+        qs = localQuestions(topic, count)
+      }
       if (qs.length === 0) {
-        showToast('error', 'AI 未生成有效题目，请重试或更换主题')
-        return
+        qs = localQuestions(topic, count)
+        usedFallback = true
+      }
+      if (usedFallback) {
+        showToast('success', 'AI 出题较慢，已使用本地题库')
       }
       setQuestions(qs)
       setCurrentTopic(topic)

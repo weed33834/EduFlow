@@ -216,6 +216,8 @@ export class ApiError extends Error {
 interface RequestOptions extends RequestInit {
   /** 是否跳过 JSON 解析（如 DELETE 可能无返回体） */
   skipJson?: boolean
+  /** 超时毫秒数；超时抛出 ApiError(超时) */
+  timeoutMs?: number
 }
 
 /**
@@ -231,11 +233,28 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     headers['Authorization'] = `Bearer ${token}`
   }
 
+  // 支持超时：通过 AbortController 中断慢请求，避免界面长期"加载中"
+  let controller: AbortController | undefined
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  if (options.timeoutMs) {
+    controller = new AbortController()
+    timeoutId = setTimeout(() => controller!.abort(), options.timeoutMs)
+  }
+
   let res: Response
   try {
-    res = await fetch(`/api${path}`, { ...options, headers })
+    res = await fetch(`/api${path}`, {
+      ...options,
+      headers,
+      signal: controller?.signal,
+    })
   } catch (e) {
+    if (controller?.signal.aborted) {
+      throw new ApiError(`请求超时(${Math.round((options.timeoutMs || 0) / 1000)}s)`, 408, e)
+    }
     throw new ApiError('网络连接失败，请检查后端服务是否启动', 0, e)
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
   }
 
   if (!res.ok) {
