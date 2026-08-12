@@ -61,9 +61,30 @@ async def generate_presentation(topic: str, level: str = "beginner") -> dict:
     )
     data = _parse_json(result)
     if not isinstance(data, dict) or not data.get("slides"):
-        return {"ok": False, "error": "AI 未返回有效讲解稿，请重试。"}
+        # LLM 失败 -> 使用内置模板兜底，保证功能可用
+        fb = _fallback_presentation(topic, level)
+        fb["warnings"] = ["AI 生成讲解稿失败，已使用内置模板。" ]
+        return fb
     return {"ok": True, "title": data.get("title", topic), "subtitle": data.get("subtitle", ""),
             "slides": data.get("slides", [])}
+
+
+def _fallback_presentation(topic: str, level: str = "beginner") -> dict:
+    """LLM 不可用时的内置模板讲解稿，保证讲解视频管线始终可用。"""
+    slides = [
+        {"title": f"{topic} · 课程总览", "bullets": [f"认识 {topic} 的核心概念", "明确学习目标与路径", "建立整体知识框架"],
+         "narration": f"大家好，今天我们一起学习{topic}。首先我们来了解它的整体框架和核心概念。"},
+        {"title": "基础概念", "bullets": [f"{topic} 的基本定义与原理", "核心术语与关键思想", "为什么要学习它"],
+         "narration": f"接下来我们进入基础部分，掌握{topic}的基本定义和核心思想。"},
+        {"title": "核心知识点", "bullets": ["由浅入深拆解重点", "结合实例理解原理", "常见的应用场景"],
+         "narration": f"这一部分我们深入讲解{topic}的核心知识点，并用实例帮助理解。"},
+        {"title": "实战应用", "bullets": ["动手实践关键步骤", "解决典型问题", "巩固所学知识"],
+         "narration": f"理论之后是实践。我们通过动手练习来巩固{topic}的知识。"},
+        {"title": "总结回顾", "bullets": ["回顾重点与难点", "梳理知识脉络", "下一步学习建议"],
+         "narration": f"最后我们做一次总结，回顾{topic}的要点，并给出进一步学习的建议。"},
+    ]
+    return {"ok": True, "title": f"{topic} · AI 讲解", "subtitle": f"适合{level}水平学习者",
+            "slides": slides}
 
 
 def _parse_json(text: str):
@@ -188,7 +209,7 @@ async def compose_presentation_video(topic: str, level: str = "beginner") -> dic
         return gen
     title = gen["title"]
     slides = gen["slides"]
-    warnings: list[str] = []
+    warnings: list[str] = list(gen.get("warnings") or [])
 
     # 探测能力（决定是否配音）
     caps = await detect_capabilities(settings.OPENAI_BASE_URL or "", settings.OPENAI_API_KEY or "")
