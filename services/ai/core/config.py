@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     LLM_TEMPERATURE: float = 0.7
     MAX_TOKENS: int = 4096
 
+    # ---- 媒体模型（可留空，由 /v1/models 自动探测选择） ----
+    TTS_MODEL: Optional[str] = None
+    ASR_MODEL: Optional[str] = None
+    IMAGE_MODEL: Optional[str] = None
+    VIDEO_MODEL: Optional[str] = None
+    TTS_VOICE: str = "default"
+
     # ---- 基础设施 ----
     REDIS_URL: str = "redis://localhost:6379/0"
     API_PORT: int = 8100
