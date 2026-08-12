@@ -221,3 +221,65 @@ async def knowledge_search(
     payload = req.model_dump()
     payload["user_id"] = current_user.id
     return await _proxy_to_ai("/api/agents/knowledge", payload)
+
+
+class PresentationRequest(BaseModel):
+    topic: str
+    level: str = "beginner"
+
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: str = ""
+
+
+class ImageGenRequest(BaseModel):
+    prompt: str
+    size: str = "1024x1024"
+
+
+@router.get("/capabilities")
+async def ai_capabilities(current_user: User = Depends(get_current_user)):
+    """探测当前模型端点的能力，返回各功能可用性。"""
+    url = f"{settings.AI_SERVICE_URL}/api/agents/capabilities"
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.get(url, timeout=30)
+            if resp.status_code == 200:
+                return resp.json()
+        except (httpx.ConnectError, httpx.TimeoutException):
+            pass
+    return {"configured": False, "message": "AI 服务不可用"}
+
+
+@router.post("/presentation")
+async def ai_presentation(
+    req: PresentationRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """AI 讲解视频：PPT + 讲稿 + 配音(可用时) + 合成视频。"""
+    payload = req.model_dump()
+    payload["user_id"] = current_user.id
+    return await _proxy_to_ai("/api/agents/presentation", payload)
+
+
+@router.post("/tts")
+async def ai_tts(
+    req: TTSRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """文本转语音。"""
+    payload = req.model_dump()
+    payload["user_id"] = current_user.id
+    return await _proxy_to_ai("/api/agents/tts", payload)
+
+
+@router.post("/image")
+async def ai_image(
+    req: ImageGenRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """文生图。"""
+    payload = req.model_dump()
+    payload["user_id"] = current_user.id
+    return await _proxy_to_ai("/api/agents/image", payload)
