@@ -133,6 +133,38 @@ export interface AIChatResponse {
   agent_type?: string
 }
 
+/** 模型端点能力信息 */
+export interface CapabilitiesInfo {
+  configured: boolean
+  message?: string
+  capabilities?: Record<string, boolean>
+  models?: Record<string, string[]>
+  chat_models?: string[]
+  features?: Record<string, boolean>
+  missing?: Record<string, string[]>
+  labels?: Record<string, string>
+  feature_labels?: Record<string, string>
+}
+
+/** AI 讲解视频结果 */
+export interface PresentationSlide {
+  title: string
+  bullets: string[]
+  narration?: string
+}
+
+export interface PresentationResult {
+  ok: boolean
+  title?: string
+  slides?: PresentationSlide[]
+  video?: string          // base64 视频
+  text_only?: boolean
+  narration_text?: string
+  hint?: string
+  warnings?: string[]
+  error?: string
+}
+
 export interface AIExplainResponse {
   response: string
   topic: string
@@ -514,6 +546,33 @@ export const aiAPI = {
     request<{ knowledge: string; prerequisites: string; has_results: boolean }>('/ai/knowledge', {
       method: 'POST',
       body: JSON.stringify({ query, topic, include_prerequisites: includePrerequisites }),
+    }),
+
+  /** 探测模型端点能力 */
+  capabilities: () => request<CapabilitiesInfo>('/ai/capabilities'),
+
+  /** AI 讲解视频（PPT + 讲稿 + 配音 + 合成） */
+  presentation: (topic: string, level = 'beginner') =>
+    request<PresentationResult>('/ai/presentation', {
+      method: 'POST',
+      timeoutMs: 180000,
+      body: JSON.stringify({ topic, level }),
+    }),
+
+  /** 文本转语音 */
+  tts: (text: string, voice = '') =>
+    request<{ ok: boolean; audio?: string; error?: string; hint?: boolean }>('/ai/tts', {
+      method: 'POST',
+      timeoutMs: 60000,
+      body: JSON.stringify({ text, voice }),
+    }),
+
+  /** 文生图 */
+  image: (prompt: string, size = '1024x1024') =>
+    request<{ ok: boolean; image?: string; error?: string }>('/ai/image', {
+      method: 'POST',
+      timeoutMs: 90000,
+      body: JSON.stringify({ prompt, size }),
     }),
 
   /** 流式对话(SSE)：通过 onDelta 回调接收增量文本 */

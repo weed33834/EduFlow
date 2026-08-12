@@ -23,6 +23,19 @@ export default function SettingsPage() {
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
 
+  // 模型能力探测
+  const [caps, setCaps] = useState<import('@/lib/api').CapabilitiesInfo | null>(null)
+  const [capsLoading, setCapsLoading] = useState(true)
+
+  useEffect(() => {
+    import('@/lib/api').then(({ aiAPI }) =>
+      aiAPI.capabilities()
+        .then(setCaps)
+        .catch(() => setCaps(null))
+        .finally(() => setCapsLoading(false))
+    )
+  }, [])
+
   useEffect(() => {
     if (!loading && !user) router.replace('/login')
   }, [loading, user, router])
@@ -242,6 +255,47 @@ export default function SettingsPage() {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* 模型能力 */}
+      <div className="glass-card p-6 mt-6">
+        <h2 className="text-sm font-bold text-gray-700 mb-1">模型能力</h2>
+        <p className="text-xs text-gray-400 mb-4">
+          自动探测当前接入的模型端点支持哪些能力。功能不可用时会自动降级并提示。
+        </p>
+        {capsLoading ? (
+          <div className="flex items-center gap-2 text-sm text-gray-400">
+            <Loader2 className="w-4 h-4 animate-spin" /> 探测中...
+          </div>
+        ) : !caps || !caps.configured ? (
+          <p className="text-sm text-amber-600">未配置模型端点，AI 相关功能将使用降级模式。</p>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(caps.capabilities || {})
+                .filter(([, v]) => v)
+                .map(([k]) => (
+                  <span key={k} className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium border border-emerald-100">
+                    <CheckCircle className="w-3.5 h-3.5" /> {caps.labels?.[k] || k}
+                  </span>
+                ))}
+            </div>
+            <div className="text-xs text-gray-500 space-y-1">
+              {Object.entries(caps.features || {}).map(([feat, avail]) => (
+                <div key={feat} className="flex items-center justify-between border-b border-gray-50 py-1">
+                  <span>{caps.feature_labels?.[feat] || feat}</span>
+                  {avail ? (
+                    <span className="text-emerald-600">可用</span>
+                  ) : (
+                    <span className="text-amber-600" title={(caps.missing?.[feat] || []).join('、')}>
+                      需：{(caps.missing?.[feat] || []).join('、')}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </main>
   )
