@@ -24,6 +24,8 @@ from pydantic import BaseModel, Field
 from core.config import settings
 from core.llm import is_llm_available
 from core.safety import check_input_safety
+from core.capabilities import detect_capabilities, build_availability_hint
+from core import media
 from agents import (
     tutor_chat,
     explain_concept,
@@ -345,6 +347,95 @@ async def agent_knowledge(req: KnowledgeRequest):
         "prerequisites": prereqs,
         "has_results": bool(results),
     }
+
+
+# ---------------------------------------------------------------------------
+# 多模态能力探测
+# ---------------------------------------------------------------------------
+
+class CapabilityRequest(BaseModel):
+    pass
+
+
+@app.get("/api/agents/capabilities")
+async def agent_capabilities():
+    """探测当前接入模型端点的能力，返回各产品功能可用性与缺失提示。"""
+    if not settings.OPENAI_BASE_URL:
+        return {"configured": False, "message": "未配置模型端点(OPENAI_BASE_URL)，请先接入模型。"}
+    caps = await detect_capabilities(settings.OPENAI_BASE_URL, settings.OPENAI_API_KEY or "")
+    return {"configured": True, **caps}
+
+
+# ---------------------------------------------------------------------------
+# AI 讲解视频（PPT + 讲解稿 + 配音 + 合成）
+# ---------------------------------------------------------------------------
+
+class PresentationRequest(BaseModel):
+    topic: str
+    level: str = "beginner"
+
+
+@app.post("/api/agents/presentation")
+async def agent_presentation(req: PresentationRequest):
+    """生成讲解视频：幻灯片 + 讲解稿 + 配音(可用时) + 合成视频。"""
+    from agents.presenter import compose_presentation_video
+
+    if not req.topic.strip():
+        raise HTTPException(status_code=400, detail="主题不能为空")
+    return await compose_presentation_video(req.topic.strip(), req.level)
+
+
+# ---------------------------------------------------------------------------
+# 媒体能力接口（TTS / ASR / 文生图）
+# ---------------------------------------------------------------------------
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: str = ""
+
+
+@app.post("/api/agents/tts")
+async def agent_tts(req: TTSRequest):
+    """文本转语音。成功返回 base64 音频。"""
+    if not settings.OPENAI_BASE_URL:
+        return {"ok": False, "error": "未配置模型端点。"}
+    caps = await detect_capabilities(settings.OPENAI_BASE_URL, settings.OPENAI_API_KEY or "")
+    tts_models = caps["models"].get("tts", [])
+    if not tts_models:
+        return {"ok": False, "error": build_availability_hint("tts", ["tts"]), "hint": True}
+    model = settings.TTS_MODEL or tts_models[0]
+    voice = req.voice or settings.TTS_VOICE or "default"
+    ok, res = await media.tts(settings.OPENAI_BASE_URL, settings.OPENAI_API_KEY or "", model, req.text, voice=voice)
+    if not ok:
+        return {"ok": False, "error": res}
+    import base64
+    return {"ok": True, "audio": base64.b64encode(res).decode(), "format": "mp3", "model": model}
+
+
+class ASRRequest(BaseModel):
+    pass
+
+
+class ImageRequest(BaseModel):
+    prompt: str
+    size: str = "1024x1024"
+
+
+@app.post("/api/agents/image")
+async def agent_image(req: ImageRequest):
+    """文生图。成功返回 base64 图片。"""
+    if not settings.OPENAI_BASE_URL:
+        return {"ok": False, "error": "未配置模型端点。"}
+    caps = await detect_capabilities(settings.OPENAI_BASE_URL, settings.OPENAI_API_KEY or "")
+    img_models = caps["models"].get("image", [])
+    if not img_models:
+        return {"ok": False, "error": build_availability_hint("image", ["image"]), "hint": True}
+    model = settings.IMAGE_MODEL or img_models[0]
+    ok, res = await media.image(settings.OPENAI_BASE_URL, settings.OPENAI_API_KEY or "", model, req.prompt, req.size)
+    if not ok:
+        return {"ok": False, "error": res}
+    import base64
+    return {"ok": True, "image": base64.b64encode(res).decode(), "model": model}
 
 
 # ---------------------------------------------------------------------------
