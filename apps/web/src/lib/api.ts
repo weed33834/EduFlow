@@ -5,7 +5,12 @@
  * - 自动附加 Authorization: Bearer <token>
  * - token 与用户信息存储在 localStorage
  */
-import { STORAGE_KEYS } from './constants'
+import { STORAGE_KEYS, API_BASE } from './constants'
+
+/* 后端 API 根地址。
+ * 说明：为规避 Next.js 重写代理对上游请求的 30s 超时（长耗时的 AI 请求会被截断为 500），
+ * 前端直连后端 API_BASE，而非走相对路径 /api 的 Next 重写。需后端开启 CORS(已配置)。 */
+const API_ROOT = `${API_BASE}/api`
 
 /* -------------------------------------------------------------------------- */
 /*                                   类型定义                                  */
@@ -288,7 +293,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   let res: Response
   try {
-    res = await fetch(`/api${path}`, {
+    res = await fetch(`${API_ROOT}${path}`, {
       ...options,
       headers,
       signal: controller?.signal,
@@ -607,7 +612,7 @@ export const aiAPI = {
     onDelta: (delta: string) => void
   ) => {
     const token = getToken()
-    return fetch('/api/ai/chat/stream', {
+    return fetch(`${API_ROOT}/ai/chat/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -644,7 +649,7 @@ export const aiAPI = {
 /** 保留兼容旧调用 */
 export async function apiFetch(path: string, options?: RequestInit) {
   const token = getToken()
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(`${API_ROOT}${path}`, {
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
