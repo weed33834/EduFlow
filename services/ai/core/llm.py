@@ -10,19 +10,40 @@ from typing import Optional
 from openai import AsyncOpenAI
 
 from core.config import settings
+from core import model_config
 
-# 仅在配置了 API Key 时创建客户端
-client: Optional[AsyncOpenAI] = None
-if settings.OPENAI_API_KEY:
-    client_kwargs: dict = {"api_key": settings.OPENAI_API_KEY}
-    if settings.OPENAI_BASE_URL:
-        client_kwargs["base_url"] = settings.OPENAI_BASE_URL
-    client = AsyncOpenAI(**client_kwargs)
+# 客户端按运行时配置动态创建/缓存，配置变化时自动重建
+_client_cache: dict = {}
+
+
+def _client_kwargs(cfg: dict) -> dict:
+    kw: dict = {"api_key": cfg.get("api_key") or ""}
+    if cfg.get("base_url"):
+        kw["base_url"] = cfg["base_url"]
+    return kw
+
+
+def get_client() -> Optional[AsyncOpenAI]:
+    """获取当前配置对应的 OpenAI 兼容客户端；未配置 key 返回 None。"""
+    cfg = model_config.get_config()
+    ak = cfg.get("api_key") or ""
+    if not ak:
+        return None
+    sig = (ak, cfg.get("base_url") or "")
+    if _client_cache.get("sig") != sig:
+        _client_cache["sig"] = sig
+        _client_cache["client"] = AsyncOpenAI(**_client_kwargs(cfg))
+    return _client_cache["client"]
+
+
+def _model() -> str:
+    cfg = model_config.get_config()
+    return cfg.get("llm_model") or settings.LLM_MODEL
 
 
 def is_llm_available() -> bool:
-    """判断 LLM 服务是否可用（是否配置了 OPENAI_API_KEY）。"""
-    return client is not None
+    """判断当前是否配置了 API Key。"""
+    return bool(model_config.get_config().get("api_key"))
 
 
 def _extract_user_message(messages: list[dict]) -> str:
@@ -174,6 +195,7 @@ async def chat_completion(
         LLM 生成的文本回复；未配置 API Key 时返回智能降级回复。
     """
     # 未配置 API Key：返回智能降级回复，不报错
+    client = get_client()
     if not client:
         return _build_fallback_reply(messages, agent_type)
 
@@ -185,7 +207,7 @@ async def chat_completion(
 
     try:
         resp = await client.chat.completions.create(
-            model=settings.LLM_MODEL,
+            model=_model(),
             messages=full_messages,
             temperature=temperature if temperature is not None else settings.LLM_TEMPERATURE,
             max_tokens=settings.MAX_TOKENS,
@@ -205,6 +227,7 @@ async def stream_chat(
 
     未配置 API Key 时以降级回复作为单次产出。
     """
+    client = get_client()
     if not client:
         yield _build_fallback_reply(messages, agent_type)
         return
@@ -217,7 +240,7 @@ async def stream_chat(
 
     try:
         stream = await client.chat.completions.create(
-            model=settings.LLM_MODEL,
+            model=_model(),
             messages=full_messages,
             temperature=settings.LLM_TEMPERATURE,
             max_tokens=settings.MAX_TOKENS,

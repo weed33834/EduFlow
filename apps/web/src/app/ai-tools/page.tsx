@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import {
-  Search, BookOpen, Volume2, Image as ImageIcon, Loader2, Sparkles, AlertTriangle, CheckCircle2,
+  Search, BookOpen, Volume2, Image as ImageIcon, Loader2, Sparkles, AlertTriangle, CheckCircle2, ClipboardCheck,
 } from 'lucide-react'
 import { aiAPI } from '@/lib/api'
 
@@ -13,15 +13,60 @@ export default function AiToolsPage() {
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <Sparkles className="w-6 h-6 text-brand-600" /> AI 工具箱
         </h1>
-        <p className="text-gray-500 mt-1">概念解释 · 知识库检索 · 配音试听 · 文生图，一站式使用全部 AI 能力。</p>
+        <p className="text-gray-500 mt-1">概念解释 · 答案评估 · 知识库检索 · 配音试听 · 文生图，一站式使用全部 AI 能力。</p>
       </div>
       <div className="grid md:grid-cols-2 gap-6">
         <ExplainTool />
+        <EvaluateTool />
         <KnowledgeTool />
         <TtsTool />
         <ImageTool />
       </div>
     </main>
+  )
+}
+
+/* ---------------- 答案评估 ---------------- */
+function EvaluateTool() {
+  const [question, setQuestion] = useState('')
+  const [answer, setAnswer] = useState('')
+  const [correct, setCorrect] = useState('')
+  const [result, setResult] = useState<{ score: number; is_correct: boolean; feedback: string; hint?: string } | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+
+  const run = async () => {
+    if (!question.trim() || !answer.trim()) return
+    setLoading(true); setErr(''); setResult(null)
+    try {
+      const r = await aiAPI.evaluate(question, answer, correct)
+      setResult({ score: r.score, is_correct: r.is_correct, feedback: r.feedback, hint: r.hint })
+    } catch (e) { setErr(e instanceof Error ? e.message : '失败') }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <Card icon={<ClipboardCheck className="w-5 h-5" />} title="答案评估" desc="提交作答，AI 给出评分与反馈">
+      <input className="input-field mb-2" placeholder="题目" value={question} onChange={e => setQuestion(e.target.value)} disabled={loading} />
+      <textarea className="input-field mb-2 resize-none" rows={2} placeholder="你的作答..." value={answer} onChange={e => setAnswer(e.target.value)} disabled={loading} />
+      <div className="flex gap-2 mb-3">
+        <input className="input-field flex-1" placeholder="参考答案（可选）" value={correct} onChange={e => setCorrect(e.target.value)} disabled={loading} />
+        <button className="btn-primary flex-shrink-0" onClick={run} disabled={loading || !question.trim() || !answer.trim()}>
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : '评估'}
+        </button>
+      </div>
+      {err && <p className="text-xs text-amber-600 mb-1">{err}</p>}
+      {result && (
+        <div className={`text-sm rounded-lg p-3 ${result.is_correct ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
+          <div className="flex items-center gap-2 font-medium mb-1">
+            {result.is_correct ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+            评分 {result.score} 分 · {result.is_correct ? '回答正确' : '需要改进'}
+          </div>
+          <p className="mb-1 whitespace-pre-wrap">{result.feedback}</p>
+          {result.hint && <p className="text-xs opacity-80">提示：{result.hint}</p>}
+        </div>
+      )}
+    </Card>
   )
 }
 

@@ -25,7 +25,7 @@ from core.config import settings
 from core.llm import is_llm_available
 from core.safety import check_input_safety
 from core.capabilities import detect_capabilities, build_availability_hint
-from core import media
+from core import media, model_config
 from agents import (
     tutor_chat,
     explain_concept,
@@ -360,10 +360,39 @@ class CapabilityRequest(BaseModel):
 @app.get("/api/agents/capabilities")
 async def agent_capabilities():
     """探测当前接入模型端点的能力，返回各产品功能可用性与缺失提示。"""
-    if not settings.OPENAI_BASE_URL:
-        return {"configured": False, "message": "未配置模型端点(OPENAI_BASE_URL)，请先接入模型。"}
-    caps = await detect_capabilities(settings.OPENAI_BASE_URL, settings.OPENAI_API_KEY or "")
+    cfg = model_config.get_config()
+    if not cfg.get("base_url"):
+        return {"configured": False, "message": "未配置模型端点(OPENAI_BASE_URL)，请先在设置中接入模型。"}
+    caps = await detect_capabilities(cfg["base_url"], cfg.get("api_key") or "")
     return {"configured": True, **caps}
+
+
+class ModelConfigRequest(BaseModel):
+    api_key: str = ""
+    base_url: str = ""
+    llm_model: str = ""
+    tts_model: str = ""
+    asr_model: str = ""
+    image_model: str = ""
+    video_model: str = ""
+    tts_voice: str = ""
+
+
+@app.get("/api/agents/model-config")
+async def get_model_config():
+    """返回当前模型配置（api_key 脱敏）。"""
+    return {"configured": True, "config": model_config.masked_config()}
+
+
+@app.put("/api/agents/model-config")
+async def update_model_config(req: ModelConfigRequest):
+    """保存模型配置。"""
+    patch = {k: v.strip() if isinstance(v, str) else v for k, v in req.model_dump().items()}
+    # 若 api_key 传的是掩码(****)，保持不变
+    if patch.get("api_key", "").endswith("****") or patch.get("api_key") == "":
+        patch.pop("api_key", None)
+    cfg = model_config.save_config(patch)
+    return {"configured": True, "config": model_config.masked_config()}
 
 
 # ---------------------------------------------------------------------------
@@ -397,15 +426,16 @@ class TTSRequest(BaseModel):
 @app.post("/api/agents/tts")
 async def agent_tts(req: TTSRequest):
     """文本转语音。成功返回 base64 音频。"""
-    if not settings.OPENAI_BASE_URL:
+    cfg = model_config.get_config()
+    if not cfg.get("base_url"):
         return {"ok": False, "error": "未配置模型端点。"}
-    caps = await detect_capabilities(settings.OPENAI_BASE_URL, settings.OPENAI_API_KEY or "")
+    caps = await detect_capabilities(cfg["base_url"], cfg.get("api_key") or "")
     tts_models = caps["models"].get("tts", [])
     if not tts_models:
         return {"ok": False, "error": build_availability_hint("tts", ["tts"]), "hint": True}
-    model = settings.TTS_MODEL or tts_models[0]
-    voice = req.voice or settings.TTS_VOICE or "default"
-    ok, res = await media.tts(settings.OPENAI_BASE_URL, settings.OPENAI_API_KEY or "", model, req.text, voice=voice)
+    model = cfg.get("tts_model") or tts_models[0]
+    voice = req.voice or cfg.get("tts_voice") or "default"
+    ok, res = await media.tts(cfg["base_url"], cfg.get("api_key") or "", model, req.text, voice=voice)
     if not ok:
         return {"ok": False, "error": res}
     import base64
@@ -424,14 +454,15 @@ class ImageRequest(BaseModel):
 @app.post("/api/agents/image")
 async def agent_image(req: ImageRequest):
     """文生图。成功返回 base64 图片。"""
-    if not settings.OPENAI_BASE_URL:
+    cfg = model_config.get_config()
+    if not cfg.get("base_url"):
         return {"ok": False, "error": "未配置模型端点。"}
-    caps = await detect_capabilities(settings.OPENAI_BASE_URL, settings.OPENAI_API_KEY or "")
+    caps = await detect_capabilities(cfg["base_url"], cfg.get("api_key") or "")
     img_models = caps["models"].get("image", [])
     if not img_models:
         return {"ok": False, "error": build_availability_hint("image", ["image"]), "hint": True}
-    model = settings.IMAGE_MODEL or img_models[0]
-    ok, res = await media.image(settings.OPENAI_BASE_URL, settings.OPENAI_API_KEY or "", model, req.prompt, req.size)
+    model = cfg.get("image_model") or img_models[0]
+    ok, res = await media.image(cfg["base_url"], cfg.get("api_key") or "", model, req.prompt, req.size)
     if not ok:
         return {"ok": False, "error": res}
     import base64

@@ -26,7 +26,7 @@ from PIL import Image, ImageDraw, ImageFont
 from core.config import settings
 from core.llm import chat_completion, is_llm_available
 from core.capabilities import detect_capabilities, build_availability_hint, Capability
-from core import media
+from core import media, model_config
 
 
 PRESENTER_SYSTEM_PROMPT = """你是资深课程制作人。请为给定的学习主题制作一份结构化的讲解演示稿。
@@ -212,11 +212,12 @@ async def compose_presentation_video(topic: str, level: str = "beginner") -> dic
     warnings: list[str] = list(gen.get("warnings") or [])
 
     # 探测能力（决定是否配音）
-    caps = await detect_capabilities(settings.OPENAI_BASE_URL or "", settings.OPENAI_API_KEY or "")
+    cfg = model_config.get_config()
+    caps = await detect_capabilities(cfg.get("base_url") or "", cfg.get("api_key") or "")
     tts_models = caps["models"].get("tts", [])
-    tts_ok = bool(tts_models) and bool(settings.OPENAI_BASE_URL)
-    if tts_ok and settings.TTS_MODEL:
-        tts_model = settings.TTS_MODEL
+    tts_ok = bool(tts_models) and bool(cfg.get("base_url"))
+    if tts_ok and cfg.get("tts_model"):
+        tts_model = cfg["tts_model"]
     elif tts_models:
         tts_model = tts_models[0]
     else:
@@ -239,8 +240,8 @@ async def compose_presentation_video(topic: str, level: str = "beginner") -> dic
             audio_path = None
             if tts_ok and tts_model and narration:
                 ok, aud = await media.tts(
-                    settings.OPENAI_BASE_URL, settings.OPENAI_API_KEY,
-                    tts_model, narration, voice=settings.TTS_VOICE,
+                    cfg.get("base_url"), cfg.get("api_key") or "",
+                    tts_model, narration, voice=cfg.get("tts_voice") or "default",
                 )
                 if ok and isinstance(aud, bytes) and aud:
                     audio_path = os.path.join(tmp, f"audio_{i:03d}.mp3")

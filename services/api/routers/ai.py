@@ -252,6 +252,46 @@ async def ai_capabilities(current_user: User = Depends(get_current_user)):
     return {"configured": False, "message": "AI 服务不可用"}
 
 
+class ModelConfigRequest(BaseModel):
+    api_key: str = ""
+    base_url: str = ""
+    llm_model: str = ""
+    tts_model: str = ""
+    asr_model: str = ""
+    image_model: str = ""
+    video_model: str = ""
+    tts_voice: str = ""
+
+
+@router.get("/model-config")
+async def ai_get_model_config(current_user: User = Depends(get_current_user)):
+    url = f"{settings.AI_SERVICE_URL}/api/agents/model-config"
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.get(url, timeout=15)
+            if resp.status_code == 200:
+                return resp.json()
+        except (httpx.ConnectError, httpx.TimeoutException):
+            pass
+    return {"configured": False, "config": {}}
+
+
+@router.put("/model-config")
+async def ai_put_model_config(
+    req: ModelConfigRequest,
+    current_user: User = Depends(get_current_user),
+):
+    url = f"{settings.AI_SERVICE_URL}/api/agents/model-config"
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.put(url, json=req.model_dump(), timeout=15)
+            if resp.status_code == 200:
+                return resp.json()
+        except (httpx.ConnectError, httpx.TimeoutException):
+            pass
+    return {"configured": False, "config": {}}
+
+
 @router.post("/presentation")
 async def ai_presentation(
     req: PresentationRequest,
