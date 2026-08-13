@@ -224,44 +224,44 @@ async def compose_presentation_video(topic: str, level: str = "beginner") -> dic
         tts_model = None
 
     tmp = tempfile.mkdtemp(prefix="eduflow_pres_")
-    segment_paths: list[str] = []
     narration_lines: list[str] = []
 
     try:
-        # 逐页：渲染幻灯片 + 生成配音
+        # 1) 并行渲染全部幻灯片 + 尝试配音
+        render_tasks = [
+            asyncio.to_thread(_render_slide, s.get("title", f"第{i+1}页"), s.get("bullets", []),
+                              s.get("narration", ""), i, len(slides))
+            for i, s in enumerate(slides)
+        ]
+        imgs = await asyncio.gather(*render_tasks)
+
+        tasks = []
         for i, slide in enumerate(slides):
-            img = _render_slide(slide.get("title", f"第{i+1}页"), slide.get("bullets", []),
-                                slide.get("narration", ""), i, len(slides))
+            img = imgs[i]
             img_path = os.path.join(tmp, f"slide_{i:03d}.png")
-            img.save(img_path)
+            await asyncio.to_thread(img.save, img_path)
             narration = slide.get("narration", "")
             narration_lines.append(f"【{slide.get('title','')}】{narration}")
+            tasks.append(_build_slide_task(tmp, i, narration, tts_ok, tts_model, cfg, img_path, warnings))
 
-            audio_path = None
-            if tts_ok and tts_model and narration:
-                ok, aud = await media.tts(
-                    cfg.get("base_url"), cfg.get("api_key") or "",
-                    tts_model, narration, voice=cfg.get("tts_voice") or "default",
-                )
-                if ok and isinstance(aud, bytes) and aud:
-                    audio_path = os.path.join(tmp, f"audio_{i:03d}.mp3")
-                    with open(audio_path, "wb") as f:
-                        f.write(aud)
-                else:
-                    warnings.append(f"第{i+1}页配音失败：{aud if isinstance(aud,str) else '未知'}")
+        # 2) 并行合成每页视频段
+        seg_results = await asyncio.gather(*tasks)
+        segment_paths = [s for s in seg_results if s and os.path.exists(s)]
+        has_audio = any(os.path.exists(os.path.join(tmp, f"audio_{i:03d}.mp3")) for i in range(len(slides)))
 
-            seg = os.path.join(tmp, f"seg_{i:03d}.mp4")
-            _make_segment(img_path, audio_path, seg)
-            if os.path.exists(seg):
-                segment_paths.append(seg)
-
-        if not segment_paths:
+        if not segment_paths and not os.path.exists(os.path.join(tmp, "slide_000.png")):
             return {"ok": False, "error": "幻灯片合成失败"}
 
-        # 合成最终视频
+        # 3) 合成最终视频
         out_path = os.path.join(tmp, "final.mp4")
-        ok_concat = _concat_segments(segment_paths, out_path)
         narration_text = "\n\n".join(narration_lines)
+
+        if not has_audio:
+            # 无配音：单次 ffmpeg 把全部幻灯片拼成视频(秒级)，避免逐段合成
+            img_list = [os.path.join(tmp, f"slide_{i:03d}.png") for i in range(len(slides)) if os.path.exists(os.path.join(tmp, f"slide_{i:03d}.png"))]
+            ok_concat = _compose_slideshow_fast(img_list, out_path)
+        else:
+            ok_concat = _concat_segments(segment_paths, out_path)
 
         if not ok_concat or not os.path.exists(out_path):
             # 无法合成视频 -> 降级为纯图片 + 讲稿
@@ -287,23 +287,37 @@ async def compose_presentation_video(topic: str, level: str = "beginner") -> dic
         pass  # tmp 清理交给系统
 
 
+async def _build_slide_task(tmp: str, i: int, narration: str, tts_ok: bool, tts_model, cfg: dict, img_path: str, warnings: list) -> Optional[str]:
+    """单页：可选配音 + 合成视频段（供并行调用）。"""
+    audio_path = None
+    if tts_ok and tts_model and narration:
+        ok, aud = await media.tts(
+            cfg.get("base_url"), cfg.get("api_key") or "",
+            tts_model, narration, voice=cfg.get("tts_voice") or "default",
+        )
+        if ok and isinstance(aud, bytes) and aud:
+            audio_path = os.path.join(tmp, f"audio_{i:03d}.mp3")
+            with open(audio_path, "wb") as f:
+                f.write(aud)
+        else:
+            warnings.append(f"第{i+1}页配音失败：{aud if isinstance(aud, str) else '未知'}")
+    seg = os.path.join(tmp, f"seg_{i:03d}.mp4")
+    await asyncio.to_thread(_make_segment, img_path, audio_path, seg)
+    return seg if os.path.exists(seg) else None
+
+
 def _make_segment(img_path: str, audio_path: Optional[str], out: str) -> None:
-    """单页：图片+音频 → mp4 片段。无音频则固定时长。"""
+    """单页：图片+音频 → mp4 片段（快预设）。无音频则固定时长。"""
     try:
+        base = [_ffmpeg(), "-y", "-loop", "1", "-i", img_path]
         if audio_path and os.path.exists(audio_path):
             dur = max(_audio_duration(audio_path), 2.0)
-            subprocess.run(
-                [_ffmpeg(), "-y", "-loop", "1", "-i", img_path, "-i", audio_path,
-                 "-c:v", "libx264", "-t", str(dur), "-pix_fmt", "yuv420p", "-c:a", "aac",
-                 "-shortest", out],
-                capture_output=True, timeout=120,
-            )
+            cmd = base + ["-i", audio_path, "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                          "-t", str(dur), "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", out]
         else:
-            subprocess.run(
-                [_ffmpeg(), "-y", "-loop", "1", "-i", img_path,
-                 "-c:v", "libx264", "-t", "6", "-pix_fmt", "yuv420p", out],
-                capture_output=True, timeout=120,
-            )
+            cmd = base + ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                          "-t", "6", "-pix_fmt", "yuv420p", out]
+        subprocess.run(cmd, capture_output=True, timeout=90)
     except Exception:
         pass
 
@@ -317,6 +331,28 @@ def _concat_segments(segments: list[str], out: str) -> bool:
         r = subprocess.run(
             [_ffmpeg(), "-y", "-f", "concat", "-safe", "0", "-i", tmp, "-c", "copy", out],
             capture_output=True, timeout=180,
+        )
+        return r.returncode == 0 and os.path.exists(out)
+    except Exception:
+        return False
+
+
+def _compose_slideshow_fast(images: list[str], out: str, per_slide: float = 6.0) -> bool:
+    """无声幻灯片：单次 ffmpeg 把多张图片按固定时长拼接为视频(快)。"""
+    if not images:
+        return False
+    try:
+        n = len(images)
+        inputs = []
+        for img in images:
+            inputs += ["-loop", "1", "-t", str(per_slide), "-i", img]
+        # 每路 [i:v] 直接 concat
+        filter_spec = "".join(f"[{i}:v]" for i in range(n)) + f"concat=n={n}:v=1:a=0[outv]"
+        r = subprocess.run(
+            [_ffmpeg(), "-y", *inputs, "-filter_complex", filter_spec,
+             "-map", "[outv]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
+             "-pix_fmt", "yuv420p", out],
+            capture_output=True, timeout=120,
         )
         return r.returncode == 0 and os.path.exists(out)
     except Exception:

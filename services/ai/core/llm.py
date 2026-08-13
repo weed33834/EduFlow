@@ -7,6 +7,8 @@ EduFlow AI Service - LLM 核心模块
 """
 from typing import Optional
 
+import asyncio
+
 from openai import AsyncOpenAI
 
 from core.config import settings
@@ -20,6 +22,8 @@ def _client_kwargs(cfg: dict) -> dict:
     kw: dict = {"api_key": cfg.get("api_key") or ""}
     if cfg.get("base_url"):
         kw["base_url"] = cfg["base_url"]
+    # 显式超时：避免端点慢/无余额时调用长时间挂起，快速失败走降级
+    kw["timeout"] = 30.0
     return kw
 
 
@@ -206,15 +210,18 @@ async def chat_completion(
     full_messages = _trim_messages(full_messages)
 
     try:
-        resp = await client.chat.completions.create(
-            model=_model(),
-            messages=full_messages,
-            temperature=temperature if temperature is not None else settings.LLM_TEMPERATURE,
-            max_tokens=settings.MAX_TOKENS,
+        resp = await asyncio.wait_for(
+            client.chat.completions.create(
+                model=_model(),
+                messages=full_messages,
+                temperature=temperature if temperature is not None else settings.LLM_TEMPERATURE,
+                max_tokens=settings.MAX_TOKENS,
+            ),
+            timeout=20.0,
         )
         return resp.choices[0].message.content
     except Exception:
-        # LLM 运行期异常(额度/网络/模型不存在等)时优雅降级，不让上层 500
+        # LLM 运行期异常(额度/网络/模型不存在/超时)时优雅降级，不让上层 500
         return _build_fallback_reply(messages, agent_type)
 
 
@@ -239,12 +246,15 @@ async def stream_chat(
     full_messages = _trim_messages(full_messages)
 
     try:
-        stream = await client.chat.completions.create(
-            model=_model(),
-            messages=full_messages,
-            temperature=settings.LLM_TEMPERATURE,
-            max_tokens=settings.MAX_TOKENS,
-            stream=True,
+        stream = await asyncio.wait_for(
+            client.chat.completions.create(
+                model=_model(),
+                messages=full_messages,
+                temperature=settings.LLM_TEMPERATURE,
+                max_tokens=settings.MAX_TOKENS,
+                stream=True,
+            ),
+            timeout=20.0,
         )
     except Exception:
         yield _build_fallback_reply(messages, agent_type)
