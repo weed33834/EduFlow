@@ -27,13 +27,33 @@ export default function SettingsPage() {
   const [caps, setCaps] = useState<import('@/lib/api').CapabilitiesInfo | null>(null)
   const [capsLoading, setCapsLoading] = useState(true)
 
+  // 模型配置
+  const [mc, setMc] = useState({
+    base_url: '', api_key: '', llm_model: '', tts_model: '', asr_model: '', image_model: '', video_model: '', tts_voice: '',
+  })
+  const [mcLoaded, setMcLoaded] = useState(false)
+  const [mcSaving, setMcSaving] = useState(false)
+  const [mcMsg, setMcMsg] = useState('')
+  const [mcTest, setMcTest] = useState('')
+
   useEffect(() => {
-    import('@/lib/api').then(({ aiAPI }) =>
-      aiAPI.capabilities()
-        .then(setCaps)
-        .catch(() => setCaps(null))
-        .finally(() => setCapsLoading(false))
-    )
+    Promise.all([
+      import('@/lib/api').then(({ aiAPI }) => aiAPI.capabilities().catch(() => null)).then(setCaps).finally(() => setCapsLoading(false)),
+      import('@/lib/api').then(({ aiAPI }) => aiAPI.getModelConfig().catch(() => null)).then(r => {
+        const c = r?.config || {}
+        setMc({
+          base_url: c.base_url || '',
+          api_key: '', // 不回显 key，只在填写时提交
+          llm_model: c.llm_model || '',
+          tts_model: c.tts_model || '',
+          asr_model: c.asr_model || '',
+          image_model: c.image_model || '',
+          video_model: c.video_model || '',
+          tts_voice: c.tts_voice || '',
+        })
+        setMcLoaded(true)
+      }),
+    ])
   }, [])
 
   useEffect(() => {
@@ -76,6 +96,47 @@ export default function SettingsPage() {
       setError(err instanceof Error ? err.message : '保存失败，请重试')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleModelSave = async () => {
+    setMcMsg(''); setMcTest('')
+    setMcSaving(true)
+    try {
+      const { aiAPI } = await import('@/lib/api')
+      const patch: Record<string, string> = {}
+      if (mc.base_url.trim()) patch.base_url = mc.base_url.trim()
+      if (mc.api_key.trim()) patch.api_key = mc.api_key.trim()
+      if (mc.llm_model.trim()) patch.llm_model = mc.llm_model.trim()
+      if (mc.tts_model.trim()) patch.tts_model = mc.tts_model.trim()
+      if (mc.asr_model.trim()) patch.asr_model = mc.asr_model.trim()
+      if (mc.image_model.trim()) patch.image_model = mc.image_model.trim()
+      if (mc.video_model.trim()) patch.video_model = mc.video_model.trim()
+      if (mc.tts_voice.trim()) patch.tts_voice = mc.tts_voice.trim()
+      await aiAPI.updateModelConfig(patch)
+      setMcMsg('模型配置已保存')
+      setMc(prev => ({ ...prev, api_key: '' }))
+      // 重新探测能力
+      const { aiAPI: api2 } = await import('@/lib/api')
+      api2.capabilities().then(setCaps).catch(() => setCaps(null))
+    } catch (e) {
+      setMcMsg('保存失败：' + (e instanceof Error ? e.message : '未知'))
+    } finally { setMcSaving(false) }
+  }
+
+  const handleModelTest = async () => {
+    setMcTest('')
+    try {
+      const { aiAPI } = await import('@/lib/api')
+      const caps = await aiAPI.capabilities()
+      if (caps.configured) {
+        const c = Object.entries(caps.capabilities || {}).filter(([, v]) => v).map(([k]) => caps.labels?.[k] || k).join('、')
+        setMcTest('连接成功，检测到能力：' + (c || '无'))
+      } else {
+        setMcTest('连接失败：' + (caps.message || '请检查配置'))
+      }
+    } catch (e) {
+      setMcTest('测试失败：' + (e instanceof Error ? e.message : '未知'))
     }
   }
 
@@ -257,6 +318,33 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* 模型配置 */}
+      <div className="glass-card p-6 mt-6">
+        <h2 className="text-sm font-bold text-gray-700 mb-1">模型配置</h2>
+        <p className="text-xs text-gray-400 mb-4">
+          在此接入你的模型端点（OpenAI 兼容）。保存后 AI 功能将使用这里配置的模型；留空的字段沿用环境变量默认值。
+        </p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Field label="API 地址 (base_url)" value={mc.base_url} onChange={v => setMc(s => ({ ...s, base_url: v }))} ph="https://api.example.com/v1" />
+          <Field label="API Key" value={mc.api_key} onChange={v => setMc(s => ({ ...s, api_key: v }))} ph="留空保持不变" password />
+          <Field label="对话模型 (llm_model)" value={mc.llm_model} onChange={v => setMc(s => ({ ...s, llm_model: v }))} ph="如 Qwen3.6-27B / gpt-4o-mini" />
+          <Field label="语音合成模型 (tts_model)" value={mc.tts_model} onChange={v => setMc(s => ({ ...s, tts_model: v }))} ph="自动探测，可留空" />
+          <Field label="语音转写模型 (asr_model)" value={mc.asr_model} onChange={v => setMc(s => ({ ...s, asr_model: v }))} ph="自动探测，可留空" />
+          <Field label="文生图模型 (image_model)" value={mc.image_model} onChange={v => setMc(s => ({ ...s, image_model: v }))} ph="自动探测，可留空" />
+          <Field label="配音音色 (tts_voice)" value={mc.tts_voice} onChange={v => setMc(s => ({ ...s, tts_voice: v }))} ph="如 default / alloy" />
+        </div>
+        <div className="flex items-center gap-3 mt-4">
+          <button className="btn-primary" onClick={handleModelSave} disabled={mcSaving}>
+            {mcSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> 保存中</> : <><Save className="w-4 h-4" /> 保存配置</>}
+          </button>
+          <button className="btn-secondary" onClick={handleModelTest}>
+            <CheckCircle className="w-4 h-4" /> 测试连接
+          </button>
+          {mcMsg && <span className={`text-xs ${mcMsg.startsWith('保存失败') ? 'text-red-500' : 'text-emerald-600'}`}>{mcMsg}</span>}
+          {mcTest && <span className="text-xs text-gray-500">{mcTest}</span>}
+        </div>
+      </div>
+
       {/* 模型能力 */}
       <div className="glass-card p-6 mt-6">
         <h2 className="text-sm font-bold text-gray-700 mb-1">模型能力</h2>
@@ -298,6 +386,17 @@ export default function SettingsPage() {
         )}
       </div>
     </main>
+  )
+}
+
+function Field({ label, value, onChange, ph, password }: {
+  label: string; value: string; onChange: (v: string) => void; ph?: string; password?: boolean
+}) {
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <input type={password ? 'password' : 'text'} className="input-field" placeholder={ph || ''} value={value} onChange={e => onChange(e.target.value)} />
+    </div>
   )
 }
 

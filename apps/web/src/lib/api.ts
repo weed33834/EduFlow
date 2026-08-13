@@ -146,6 +146,19 @@ export interface CapabilitiesInfo {
   feature_labels?: Record<string, string>
 }
 
+/** 模型端点配置 */
+export interface ModelConfig {
+  api_key?: string
+  has_api_key?: boolean
+  base_url?: string
+  llm_model?: string
+  tts_model?: string
+  asr_model?: string
+  image_model?: string
+  video_model?: string
+  tts_voice?: string
+}
+
 /** AI 讲解视频结果 */
 export interface PresentationSlide {
   title: string
@@ -550,6 +563,16 @@ export const aiAPI = {
 
   /** 探测模型端点能力 */
   capabilities: () => request<CapabilitiesInfo>('/ai/capabilities'),
+
+  /** 获取模型配置（api_key 脱敏） */
+  getModelConfig: () => request<{ configured: boolean; config: ModelConfig }>('/ai/model-config'),
+
+  /** 保存模型配置 */
+  updateModelConfig: (cfg: Partial<ModelConfig>) =>
+    request<{ configured: boolean; config: ModelConfig }>('/ai/model-config', {
+      method: 'PUT',
+      body: JSON.stringify(cfg),
+    }),
 
   /** AI 讲解视频（PPT + 讲稿 + 配音 + 合成） */
   presentation: (topic: string, level = 'beginner') =>

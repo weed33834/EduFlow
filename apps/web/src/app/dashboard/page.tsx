@@ -107,6 +107,21 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* 新手引导 */}
+      {!fetching && paths.length === 0 && (
+        <div className="mb-8 glass-card overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-brand-50 to-teal-50">
+            <p className="font-semibold text-gray-800">欢迎来到 EduFlow，跟我一起开始吧</p>
+            <p className="text-sm text-gray-500 mt-0.5">三步建立你的学习计划</p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-4 p-5">
+            <OnboardStep n={1} title="创建学习路径" desc="设置学习目标" href="/learning" cta="去创建" />
+            <OnboardStep n={2} title="AI 规划模块" desc="自动生成课程大纲" href="/learning" cta="AI 规划" />
+            <OnboardStep n={3} title="练习 + 复习" desc="做题巩固，按记忆复习" href="/practice" cta="去练习" />
+          </div>
+        </div>
+      )}
+
       {/* 统计卡片 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         {stats.map((s, i) => (
@@ -275,6 +290,21 @@ function buildSuggestions(paths: LearningPath[], progress: ProgressOverview | nu
     out.push({ icon: TrendingUp, text: '坚持每日学习，AI 会持续为你优化学习路径', color: 'text-blue-500' })
   }
   return out.slice(0, 3)
+}
+
+function OnboardStep({ n, title, desc, href, cta }: { n: number; title: string; desc: string; href: string; cta: string }) {
+  return (
+    <div className="flex items-start gap-3 p-4 rounded-xl border border-gray-100 hover:border-brand-200 hover:bg-brand-50/40 transition-colors">
+      <div className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">{n}</div>
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-gray-800 text-sm">{title}</p>
+        <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
+        <Link href={href} className="inline-flex items-center gap-1 text-sm text-brand-600 font-medium mt-2 hover:underline">
+          {cta} <ArrowRight className="w-3.5 h-3.5" />
+        </Link>
+      </div>
+    </div>
+  )
 }
 
 function FullScreenLoader() {

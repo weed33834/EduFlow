@@ -47,6 +47,28 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* 怎么开始 */}
+      <section className="py-16 px-4 bg-white border-t border-gray-100">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-10">
+            <span className="inline-flex items-center gap-2 text-xs font-semibold text-brand-600 bg-brand-50 border border-brand-100 px-3 py-1.5 rounded-lg mb-4">
+              <span className="w-1.5 h-1.5 rounded-full bg-brand-500" /> 三步开始
+            </span>
+            <h2 className="text-2xl md:text-3xl font-bold text-gray-900">三分钟就能开始学习</h2>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6">
+            <Step n={1} title="注册账号" desc="免费注册，登录后进入个人学习空间。" />
+            <Step n={2} title="创建课程" desc="输入学习目标，AI 自动规划模块与进度。" />
+            <Step n={3} title="练习·复习·AI辅导" desc="做题、按记忆规律复习，随时向 AI 求助。" />
+          </div>
+          <div className="text-center mt-8">
+            <Link href="/register" className="btn-primary !px-7 !py-3">
+              立即开始 <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* CTA */}
       <section className="py-16 px-4">
         <div className="max-w-3xl mx-auto bg-white border border-gray-200 rounded-2xl p-10 md:p-12 text-center shadow-sm">
@@ -73,6 +95,16 @@ function Feature({ icon: Icon, title, desc }: { icon: typeof Target; title: stri
       <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center mb-3">
         <Icon className="w-5 h-5" />
       </div>
+      <h3 className="font-semibold text-gray-900 mb-1">{title}</h3>
+      <p className="text-sm text-gray-500 leading-relaxed">{desc}</p>
+    </div>
+  )
+}
+
+function Step({ n, title, desc }: { n: number; title: string; desc: string }) {
+  return (
+    <div className="bg-gray-50 border border-gray-100 rounded-2xl p-6">
+      <div className="w-9 h-9 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold mb-3">{n}</div>
       <h3 className="font-semibold text-gray-900 mb-1">{title}</h3>
       <p className="text-sm text-gray-500 leading-relaxed">{desc}</p>
     </div>
