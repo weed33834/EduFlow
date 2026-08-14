@@ -9,8 +9,8 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import {
-  learningAPI, progressAPI,
-  type LearningPath, type Module, type ProgressOverview,
+  progressAPI,
+  type Module, type ProgressOverview,
 } from '@/lib/api'
 import { formatDuration, getStatusColor, getStatusLabel, cn } from '@/lib/utils'
 
@@ -25,7 +25,6 @@ export default function ProgressPage() {
   const router = useRouter()
   const { user, loading } = useAuth()
 
-  const [paths, setPaths] = useState<LearningPath[]>([])
   const [rows, setRows] = useState<ModuleRow[]>([])
   const [overview, setOverview] = useState<ProgressOverview | null>(null)
   const [avgQuiz, setAvgQuiz] = useState<number | null>(null)
@@ -41,49 +40,32 @@ export default function ProgressPage() {
     setFetching(true)
     setError('')
     try {
-      // 读取本地练习历史用于计算平均测验分
-      let quizScores: number[] = []
-      try {
-        const raw = localStorage.getItem('eduflow_practice_history')
-        if (raw) {
-          const list = JSON.parse(raw) as Array<{ score: number }>
-          quizScores = list.map(s => s.score)
-        }
-      } catch {
-        /* ignore */
-      }
-      setAvgQuiz(quizScores.length > 0 ? Math.round(quizScores.reduce((a, b) => a + b, 0) / quizScores.length) : null)
-
-      const [pathsResult, progressResult] = await Promise.allSettled([
-        learningAPI.getPaths(),
-        progressAPI.getMyProgress(),
-      ])
-
-      const safePaths = pathsResult.status === 'fulfilled' && Array.isArray(pathsResult.value) ? pathsResult.value : []
-      setPaths(safePaths)
-      const ov = progressResult.status === 'fulfilled' ? progressResult.value : null
+      // 服务端聚合：进度总览(含模块明细/总时长/薄弱点/测验分)
+      const ov = await progressAPI.getOverview()
       setOverview(ov)
 
-      // 拉取每个路径的模块，组合成行
-      const detailMap = new Map<number, { completion: number; learning_time: number }>()
-      ov?.details?.forEach(d => detailMap.set(d.module_id, { completion: d.completion, learning_time: d.learning_time }))
-
-      const moduleResults = await Promise.allSettled(safePaths.map(p => learningAPI.getPath(p.id)))
-      const moduleRows: ModuleRow[] = []
-      moduleResults.forEach((r, i) => {
-        if (r.status === 'fulfilled' && Array.isArray(r.value?.modules)) {
-          r.value.modules.forEach(m => {
-            const d = detailMap.get(m.id)
-            moduleRows.push({
-              module: m,
-              pathTitle: safePaths[i].title,
-              completion: d?.completion ?? (m.progress || (m.status === 'completed' ? 100 : 0)),
-              learningTime: d?.learning_time ?? 0,
-            })
-          })
-        }
+      const moduleDetails = ov?.module_details || []
+      // 平均测验分：取各模块最近一次测验得分
+      const scores: number[] = []
+      moduleDetails.forEach(md => {
+        const last = (md.quiz_scores || []).slice(-1)[0]
+        if (last && typeof last.score === 'number') scores.push(last.score)
       })
-      // 按完成度升序（薄弱的在前）
+      setAvgQuiz(scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null)
+
+      const moduleRows: ModuleRow[] = moduleDetails.map(md => ({
+        module: {
+          id: md.module_id,
+          path_id: 0,
+          title: md.module_title || `模块 ${md.module_id}`,
+          order: 0,
+          status: md.module_status || 'not_started',
+          progress: md.module_progress ?? md.completion_percentage ?? 0,
+        },
+        pathTitle: md.path_title || '',
+        completion: md.completion_percentage ?? md.module_progress ?? 0,
+        learningTime: md.learning_time_minutes ?? 0,
+      }))
       moduleRows.sort((a, b) => a.completion - b.completion)
       setRows(moduleRows)
     } catch (err) {

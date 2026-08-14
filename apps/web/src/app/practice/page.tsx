@@ -144,7 +144,37 @@ export default function PracticePage() {
   }, [loading, user, router])
 
   useEffect(() => {
-    setHistory(loadHistory())
+    const local = loadHistory()
+    // 从服务端拉取练习会话，与本地合并（服务端优先），跨设备也能看到历史
+    practiceAPI.getSessions()
+      .then(sessions => {
+        const list = Array.isArray(sessions) ? sessions : []
+        const server: LocalSession[] = list
+          .filter(s => s.status === 'completed')
+          .map(s => {
+            const answers = Array.isArray(s.answers) ? s.answers : []
+            return {
+              id: s.id,
+              topic: s.topic || '练习',
+              moduleId: s.module_id,
+              moduleTitle: '',
+              difficulty: s.session_type || 'quiz',
+              questions: (Array.isArray(s.questions) ? s.questions : []) as unknown as LocalSession['questions'],
+              answers: answers as unknown as LocalSession['answers'],
+              score: s.score ?? 0,
+              total: answers.length,
+              correct: answers.filter((a: any) => a.is_correct).length,
+              completedAt: s.completed_at || s.started_at || '',
+            }
+          })
+        const map = new Map<number, LocalSession>()
+        server.forEach(s => map.set(s.id, s))
+        local.forEach(s => { if (s.id && !map.has(s.id)) map.set(s.id, s) })
+        const merged = [...map.values()]
+        setHistory(merged)
+        saveHistory(merged)
+      })
+      .catch(() => setHistory(local))
   }, [])
 
   const showToast = (type: 'success' | 'error', msg: string) => {

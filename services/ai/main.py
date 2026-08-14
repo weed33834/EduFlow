@@ -30,11 +30,9 @@ from agents import (
     tutor_chat,
     explain_concept,
     buddy_chat,
-    discuss_topic,
     generate_questions,
     evaluate_answer,
     generate_learning_path,
-    adjust_plan,
     tutor_chat_stream,
     buddy_chat_stream,
 )
@@ -75,11 +73,6 @@ class ExplainRequest(BaseModel):
     level: str = "beginner"
 
 
-class DiscussRequest(BaseModel):
-    topic: str
-    context: Optional[dict] = None
-
-
 class GenerateQuestionsRequest(BaseModel):
     topic: str
     difficulty: str = "medium"
@@ -98,11 +91,6 @@ class PlanRequest(BaseModel):
     level: str = "beginner"
     duration_weeks: int = 12
     preferences: Union[list, dict, str, None] = None
-
-
-class AdjustPlanRequest(BaseModel):
-    feedback: str
-    current_plan: dict = Field(default_factory=dict)
 
 
 class KnowledgeRequest(BaseModel):
@@ -139,11 +127,13 @@ async def health():
         "endpoints": [
             "POST /api/agents/chat",
             "POST /api/agents/explain",
-            "POST /api/agents/discuss",
             "POST /api/agents/generate-questions",
             "POST /api/agents/evaluate",
             "POST /api/agents/plan",
-            "POST /api/agents/adjust-plan",
+            "POST /api/agents/knowledge",
+            "POST /api/agents/presentation",
+            "POST /api/agents/tts",
+            "POST /api/agents/image",
         ],
     }
 
@@ -248,21 +238,6 @@ async def agent_explain(req: ExplainRequest):
 
 
 # ---------------------------------------------------------------------------
-# 话题讨论
-# ---------------------------------------------------------------------------
-
-@app.post("/api/agents/discuss")
-async def agent_discuss(req: DiscussRequest):
-    """话题讨论：围绕指定话题发起学习伙伴式讨论。"""
-    result = await discuss_topic(req.topic)
-    return {
-        "response": result,
-        "topic": req.topic,
-        "llm_available": is_llm_available(),
-    }
-
-
-# ---------------------------------------------------------------------------
 # 题目生成
 # ---------------------------------------------------------------------------
 
@@ -312,21 +287,6 @@ async def agent_plan(req: PlanRequest):
         "plan": plan,
         "goal": req.goal,
         "level": req.level,
-        "llm_available": is_llm_available(),
-    }
-
-
-# ---------------------------------------------------------------------------
-# 学习计划调整
-# ---------------------------------------------------------------------------
-
-@app.post("/api/agents/adjust-plan")
-async def agent_adjust_plan(req: AdjustPlanRequest):
-    """调整计划：根据反馈调整现有学习计划。"""
-    adjusted = await adjust_plan(req.feedback, req.current_plan)
-    return {
-        "plan": adjusted,
-        "feedback": req.feedback,
         "llm_available": is_llm_available(),
     }
 

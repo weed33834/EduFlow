@@ -11,12 +11,11 @@ from .tutor import (
 )
 from .buddy import (
     buddy_chat,
-    discuss_topic,
     buddy_chat_stream,
     build_chat_messages as buddy_build_messages,
 )
 from .examiner import generate_questions, evaluate_answer
-from .planner import generate_learning_path, adjust_plan
+from .planner import generate_learning_path
 
 __all__ = [
     "tutor_chat",
@@ -24,22 +23,9 @@ __all__ = [
     "tutor_chat_stream",
     "tutor_build_messages",
     "buddy_chat",
-    "discuss_topic",
     "buddy_chat_stream",
     "buddy_build_messages",
     "generate_questions",
     "evaluate_answer",
     "generate_learning_path",
-    "adjust_plan",
-]
-
-__all__ = [
-    "tutor_chat",
-    "explain_concept",
-    "buddy_chat",
-    "discuss_topic",
-    "generate_questions",
-    "evaluate_answer",
-    "generate_learning_path",
-    "adjust_plan",
 ]

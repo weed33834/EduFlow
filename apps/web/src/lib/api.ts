@@ -86,6 +86,7 @@ export interface PracticeSession {
   user_id?: number
   module_id?: number
   session_type?: string
+  topic?: string
   questions?: Question[]
   answers?: Array<{ question_id: number; answer: string; is_correct: boolean }>
   score?: number
@@ -125,12 +126,29 @@ export interface ProgressDetail {
   learning_time: number
 }
 
+/** 进度总览模块明细（对应后端 /progress/overview 的 module_details） */
+export interface ProgressModuleDetail {
+  module_id: number
+  module_title?: string
+  path_title?: string
+  module_status?: string
+  module_progress?: number
+  learning_time_minutes?: number
+  completion_percentage?: number
+  quiz_scores?: Array<{ score: number }>
+  weak_points?: string[]
+  strong_points?: string[]
+}
+
 export interface ProgressOverview {
+  user_id?: number
   overall_completion: number
   module_count: number
+  total_learning_time_minutes?: number
   weak_points: string[]
   strong_points?: string[]
   details?: ProgressDetail[]
+  module_details?: ProgressModuleDetail[]
 }
 
 export interface AIChatResponse {
