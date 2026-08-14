@@ -5,7 +5,7 @@ RAG 上下文构建助手
 构造成可注入系统/用户提示词的上下文块，实现「检索增强生成」——让答案有据可依，
 并在无 LLM 时也能给出基于知识库的落点。
 """
-from tools.knowledge_search import search_knowledge, get_prerequisites, list_topics
+from tools.knowledge_search import search_knowledge, get_prerequisites
 
 
 async def build_knowledge_context(query: str, topic: str = "", max_items: int = 4) -> str:

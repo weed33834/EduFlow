@@ -86,45 +86,6 @@ async def generate_learning_path(
     return _fallback_learning_path(goal, level, duration_weeks, preferences)
 
 
-async def adjust_plan(feedback: str, current_plan: dict) -> dict:
-    """调整学习计划。
-
-    根据学生反馈调整现有学习计划。
-    未配置 API Key 时基于反馈做规则化的简单调整。
-
-    Args:
-        feedback: 学生的反馈内容。
-        current_plan: 当前的学习计划。
-
-    Returns:
-        调整后的学习计划字典。
-    """
-    # 降级：基于反馈做规则化调整
-    if not is_llm_available():
-        return _fallback_adjust_plan(feedback, current_plan)
-
-    prompt = f"""当前学习计划：{json.dumps(current_plan, ensure_ascii=False)}
-学生反馈：{feedback}
-
-请根据反馈调整学习计划，以 JSON 格式返回调整后的完整计划。
-返回结构必须与原计划一致：{{
-  "title": "...",
-  "description": "...",
-  "estimated_duration": "...",
-  "milestones": [...],
-  "modules": [...]
-}}"""
-    messages = [{"role": "user", "content": prompt}]
-    result = await chat_completion(messages, PLANNER_SYSTEM_PROMPT, agent_type="planner")
-
-    adjusted = _parse_json(result)
-    if isinstance(adjusted, dict) and adjusted:
-        return _normalize_plan(adjusted, current_plan.get("title", ""), "", 0)
-
-    # 解析失败，回退到规则化调整
-    return _fallback_adjust_plan(feedback, current_plan)
-
-
 # ---------------------------------------------------------------------------
 # 降级：结构化通用学习路径
 # ---------------------------------------------------------------------------
@@ -239,53 +200,6 @@ def _fallback_learning_path(
         ],
     }
 
-
-def _fallback_adjust_plan(feedback: str, current_plan: dict) -> dict:
-    """降级计划调整：基于反馈做规则化的简单调整。"""
-    if not isinstance(current_plan, dict) or not current_plan:
-        # 若没有原计划，直接生成一份新的通用路径
-        return _fallback_learning_path(feedback or "自主学习", "beginner", 12, None)
-
-    # 深拷贝原计划，避免修改入参
-    import copy
-    adjusted = copy.deepcopy(current_plan)
-
-    feedback_lower = (feedback or "").lower()
-    note = (
-        "\n\n[降级模式调整说明] 当前未配置 OPENAI_API_KEY，已根据你的反馈"
-        "「" + (feedback or "") + "」做规则化调整。"
-    )
-
-    # 根据反馈关键词做简单调整
-    if any(kw in feedback_lower for kw in ["太慢", "进度慢", "加快", "提速", "太长"]):
-        # 加快节奏：缩减时长
-        for m in adjusted.get("modules", []):
-            if "estimated_minutes" in m and isinstance(m["estimated_minutes"], int):
-                m["estimated_minutes"] = max(int(m["estimated_minutes"] * 0.75), 30)
-        note += "检测到希望加快进度，已将各模块预计时长缩减约 25%。"
-    elif any(kw in feedback_lower for kw in ["太难", "吃力", "跟不上", "太难了"]):
-        # 降低难度：增加时长、补充基础
-        for m in adjusted.get("modules", []):
-            if "estimated_minutes" in m and isinstance(m["estimated_minutes"], int):
-                m["estimated_minutes"] = int(m["estimated_minutes"] * 1.3)
-        note += "检测到学习吃力，已延长各模块学习时长约 30%，建议放慢节奏、多做基础练习。"
-    elif any(kw in feedback_lower for kw in ["太简单", "太容易", "加快难度", "挑战"]):
-        note += "检测到希望提升难度，建议跳过已掌握的基础模块，重点攻克进阶和实战部分。"
-    elif any(kw in feedback_lower for kw in ["更多练习", "加题", "练习题", "实战"]):
-        note += "检测到希望增加练习，建议在每个模块后补充对应的练习题和小项目。"
-    else:
-        note += "由于无法进行语义分析，仅原样保留计划并附上你的反馈，建议配置 AI 服务后获得更精准的调整。"
-
-    # 追加调整说明到描述
-    desc = adjusted.get("description", "")
-    adjusted["description"] = (desc + note).strip()
-    adjusted["adjustment_feedback"] = feedback or ""
-    return adjusted
-
-
-# ---------------------------------------------------------------------------
-# 工具函数
-# ---------------------------------------------------------------------------
 
 def _format_preferences(preferences: Union[list, dict, str, None]) -> str:
     """将偏好格式化为可读字符串。"""

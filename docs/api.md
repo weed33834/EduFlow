@@ -678,11 +678,9 @@ GET /api/health
   "endpoints": [
     "POST /api/agents/chat",
     "POST /api/agents/explain",
-    "POST /api/agents/discuss",
     "POST /api/agents/generate-questions",
     "POST /api/agents/evaluate",
     "POST /api/agents/plan",
-    "POST /api/agents/adjust-plan"
   ]
 }
 ```
@@ -739,21 +737,6 @@ POST /api/agents/explain
 | level | string | `"beginner"` | 学习者水平 |
 
 **响应**：`{ "response": "...", "concept": "...", "level": "...", "llm_available": true }`
-
-### 6.4 话题讨论
-
-```
-POST /api/agents/discuss
-```
-
-**请求体**：
-
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| topic | string | - | 讨论话题 |
-| context | object \| null | null | 附加上下文 |
-
-**响应**：`{ "response": "...", "topic": "...", "llm_available": true }`
 
 ### 6.5 生成练习题
 
@@ -849,27 +832,6 @@ POST /api/agents/plan
   "llm_available": true
 }
 ```
-
-### 6.8 调整学习计划
-
-```
-POST /api/agents/adjust-plan
-```
-
-**请求体**：
-
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| feedback | string | - | 学生反馈内容 |
-| current_plan | object | `{}` | 当前学习计划 |
-
-**响应**：`{ "plan": { ... }, "feedback": "...", "llm_available": true }`
-
----
-
-## 7. Engine 服务 API（端口 8200）
-
-对应文件 `services/engine/main.py`。提供学习科学算法能力。
 
 ### 7.1 健康检查
 

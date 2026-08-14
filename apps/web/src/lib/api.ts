@@ -481,8 +481,6 @@ export interface ReviewDue {
 export const reviewAPI = {
   getDue: () => request<ReviewDue>('/review/due'),
 
-  getAll: () => request<{ items: ReviewItem[] }>('/review/'),
-
   submitReview: (id: number, score: number) =>
     request<ReviewItem>(`/review/${id}/review`, {
       method: 'POST',
@@ -536,17 +534,6 @@ export const conversationAPI = {
 
 /** AI API */
 export const aiAPI = {
-  chat: (
-    message: string,
-    agentType: 'tutor' | 'buddy' = 'tutor',
-    context: Record<string, unknown> = {},
-    history: Array<{ role: 'user' | 'assistant'; content: string }> = []
-  ) =>
-    request<AIChatResponse>('/ai/chat', {
-      method: 'POST',
-      body: JSON.stringify({ message, agent_type: agentType, context, history }),
-    }),
-
   generateQuestions: (topic: string, difficulty = 'medium', count = 5, context = '') =>
     request<AIGenerateQuestionsResponse>('/ai/generate-questions', {
       method: 'POST',
@@ -662,19 +649,4 @@ export const aiAPI = {
       }
     })
   },
-}
-
-/** 保留兼容旧调用 */
-export async function apiFetch(path: string, options?: RequestInit) {
-  const token = getToken()
-  const res = await fetch(`${API_ROOT}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options?.headers,
-    },
-    ...options,
-  })
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
-  return res.json()
 }

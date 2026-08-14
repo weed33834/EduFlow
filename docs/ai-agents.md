@@ -35,7 +35,7 @@ AI 服务基于 FastAPI 构建，使用 OpenAI SDK 调用大语言模型（默�
 | 智能体 | 类型 | 说明 |
 |--------|------|------|
 | Tutor（导师） | chat | 苏格拉底式智能导师，辅导答疑与概念解释 |
-| Buddy（学习伙伴） | chat | 学习伙伴式对话，话题讨论 |
+| Buddy（学习伙伴） | chat | 学习伙伴式对话 |
 | Examiner（出题官） | tool | 出题与答案评估 |
 | Planner（规划师） | tool | 学习路径规划与调整 |
 
@@ -104,7 +104,6 @@ Buddy 学习伙伴智能体以同学的身份与学生交流，语气轻松友�
 | 能力 | 函数 | 说明 |
 |------|------|------|
 | 学习伙伴对话 | `buddy_chat(message, context)` | 以朋友口吻交流，给予鼓励和陪伴 |
-| 话题讨论 | `discuss_topic(topic)` | 围绕指定话题发起讨论，激发思考 |
 
 ### 2.3 系统提示词
 
@@ -121,14 +120,12 @@ Buddy 学习伙伴智能体以同学的身份与学生交流，语气轻松友�
 未配置 API Key 时：
 
 - **对话降级**：返回鼓励性回复，分享实用的学习小建议（梳理已知信息、复述问题、换换心情、找人讨论等），营造陪伴感。
-- **话题讨论降级**：返回多角度思考框架，从「历史背景」「核心观点」「现实意义」「争议焦点」「未来发展」五个维度引导展开讨论，并附上思考引导问题。
 
 ### 2.5 对应接口
 
 | 接口 | 路径 |
 |------|------|
 | AI 服务 | `POST /api/agents/chat`（agent_type="buddy"） |
-| AI 服务 | `POST /api/agents/discuss` |
 
 > 注意：`POST /api/agents/chat` 仅支持 `tutor` 和 `buddy` 两种 agent_type，传入其他值会返回 HTTP 400 错误，而非静默降级。
 
@@ -222,7 +219,6 @@ Planner 规划师智能体根据学习目标、当前水平、可用时间和偏
 | 能力 | 函数 | 说明 |
 |------|------|------|
 | 生成学习路径 | `generate_learning_path(goal, level, duration_weeks, preferences)` | 生成结构化学习路径 |
-| 调整学习计划 | `adjust_plan(feedback, current_plan)` | 根据反馈调整现有计划 |
 
 ### 4.3 系统提示词
 
@@ -256,7 +252,6 @@ LLM 返回结果经过 `_normalize_plan` 规范化，确保字段完整。
 
 ### 4.5 计划调整
 
-`adjust_plan` 接收学生反馈和当前计划，返回调整后的完整计划。API 服务侧的 `POST /api/ai/plan` 还会将前端的 `difficulty` 和 `context` 字段映射为 AI 服务期望的 `preferences` 参数。
 
 ### 4.6 降级行为
 
@@ -270,7 +265,6 @@ LLM 返回结果经过 `_normalize_plan` 规范化，确保字段完整。
 | 接口 | 路径 |
 |------|------|
 | AI 服务 | `POST /api/agents/plan` |
-| AI 服务 | `POST /api/agents/adjust-plan` |
 | API 代理 | `POST /api/ai/plan` |
 
 ---
@@ -334,7 +328,6 @@ AI 服务的核心设计原则是**永远可用**。无论是否配置了 `OPENA
 ```
 1. Planner 规划路径    →  生成个性化学习路径与模块
 2. Tutor 辅导学习      →  学习过程中随时提问、解释概念
-3. Buddy 伴学讨论      →  话题讨论、协同练习
 4. Examiner 出题评估    →  生成练习题、评估答案
 5. Planner 调整计划    →  根据反馈动态调整学习路径
 ```
@@ -346,7 +339,6 @@ AI 服务的核心设计原则是**永远可用**。无论是否配置了 `OPENA
 3. 用户想讨论某个话题，与 Buddy 交流（`POST /api/ai/chat`，agent_type="buddy"）
 4. 用户通过 Examiner 生成练习题（`POST /api/ai/generate-questions`）
 5. 用户提交答案，Examiner 评估（`POST /api/ai/evaluate`）
-6. 用户反馈学习情况，Planner 调整计划（`POST /api/agents/adjust-plan`）
 
 ---
 
