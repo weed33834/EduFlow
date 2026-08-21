@@ -302,7 +302,7 @@ export default function ChatPage() {
                 <Brain className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h1 className="text-base font-bold text-gray-900">EduFlow Agent</h1>
+                <h1 className="text-base font-bold text-gray-900">EduAgent</h1>
                 <p className="text-xs text-gray-400">AI 编程学习伙伴</p>
               </div>
             </div>

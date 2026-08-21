@@ -35,7 +35,7 @@ export default function RegisterPage() {
     <main className="min-h-screen flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">注册 EduFlow Agent</h1>
+          <h1 className="text-2xl font-bold text-gray-900">注册 EduAgent</h1>
           <p className="text-sm text-gray-500 mt-1">开始跟 AI 学习编程</p>
         </div>
 

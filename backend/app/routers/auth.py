@@ -1,4 +1,4 @@
-"""认证路由 — 保留 EduFlow 原有认证逻辑，改用 SQLAlchemy 2.0 Mapped"""
+"""认证路由 — 保留 EduAgent 原有认证逻辑，改用 SQLAlchemy 2.0 Mapped"""
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession

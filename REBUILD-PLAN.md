@@ -1,4 +1,4 @@
-# EduFlow 重构方案：从 LMS 平台到编程学习 Agent
+# EduAgent 重构方案：从 LMS 平台到编程学习 Agent
 
 > **文档版本**：v1.0  
 > **日期**：2026-08-21  
@@ -9,7 +9,7 @@
 
 ## 一、现状诊断摘要
 
-EduFlow 现在是一个"AI 驱动的学生自学平台"，实际做的是 LMS CRUD + AI API 代理的缝合体。核心问题：
+EduAgent 现在是一个"AI 驱动的学生自学平台"，实际做的是 LMS CRUD + AI API 代理的缝合体。核心问题：
 
 | 问题 | 严重度 | 说明 |
 |---|---|---|
@@ -30,13 +30,13 @@ EduFlow 现在是一个"AI 驱动的学生自学平台"，实际做的是 LMS CR
 
 ### 2.1 一句话定义
 
-**EduFlow Agent — 一个会教编程、会出题、会判题、会排复习的 AI 学习伙伴。**
+**EduAgent — 一个会教编程、会出题、会判题、会排复习的 AI 学习伙伴。**
 
 不是平台，不是工具箱，不是 LMS。就是一个 Agent，学生跟它对话，它在背后做所有事。
 
 ### 2.2 核心差异化
 
-| 能力 | ChatGPT 做不到 | EduFlow Agent 做得到 |
+| 能力 | ChatGPT 做不到 | EduAgent 做得到 |
 |---|---|---|
 | 代码沙箱执行 | 学生写代码→Agent 执行→读输出→给反馈 | ✅ E2B/Judge0 沙箱 |
 | 自适应出题 | 根据学生掌握度和薄弱点动态出题 | ✅ FSRS + LLM |
@@ -497,7 +497,7 @@ Agent 可调用的工具，用 LangGraph 的 tool calling 或手动注入：
 ### 4.1 表结构设计
 
 ```sql
--- 用户（保留 EduFlow 的 user 表，改用 SQLAlchemy 2.0 Mapped 风格）
+-- 用户（保留 EduAgent 的 user 表，改用 SQLAlchemy 2.0 Mapped 风格）
 CREATE TABLE users (
     id          SERIAL PRIMARY KEY,
     email       VARCHAR(255) UNIQUE NOT NULL,
@@ -615,7 +615,7 @@ CREATE INDEX idx_memory_user ON memory_facts(user_id);
 CREATE INDEX idx_memory_category ON memory_facts(user_id, category);
 ```
 
-### 4.2 与 EduFlow 旧模型对比
+### 4.2 与 EduAgent 旧模型对比
 
 | 旧表 | 新表 | 变化 |
 |---|---|---|
@@ -667,7 +667,7 @@ GET  /api/profile                           → { profile, stats }
 # 复习
 GET  /api/review/due                        → { due_count, items: [...] }
 
-# 认证（保留 EduFlow 原有接口）
+# 认证（保留 EduAgent 原有接口）
 POST /api/auth/register                     → { access_token, user }
 POST /api/auth/login                        → { access_token, user }
 GET  /api/auth/me                           → { user }
@@ -677,7 +677,7 @@ PUT  /api/auth/me                           → { user }
 GET  /api/health                            → { status: "ok" }
 ```
 
-### 5.2 与 EduFlow 旧 API 对比
+### 5.2 与 EduAgent 旧 API 对比
 
 | 旧接口 | 新接口 | 变化 |
 |---|---|---|
@@ -713,7 +713,7 @@ GET  /api/health                            → { status: "ok" }
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  EduFlow Agent                  [设置] [退出]       │
+│  EduAgent                  [设置] [退出]       │
 ├────────────┬─────────────────────────────────────────┤
 │            │                                          │
 │  会话列表   │  对话区域                                 │
@@ -774,7 +774,7 @@ GET  /api/health                            → { status: "ok" }
 | 向量数据库 | Qdrant | 1.12+ | 开源，Rust 写，性能强 |
 | 记忆层 | 自建（memory_facts 表） | — | MVP 阶段自建足够，不用 Mem0 |
 | 缓存/队列 | Redis | 7+ | 限流 + 异步任务 |
-| 认证 | python-jose + bcrypt | 保留 | 保留 EduFlow 原有方案 |
+| 认证 | python-jose + bcrypt | 保留 | 保留 EduAgent 原有方案 |
 
 ### 7.2 前端
 
@@ -800,7 +800,7 @@ GET  /api/health                            → { status: "ok" }
 
 ---
 
-## 八、从 EduFlow 迁移策略
+## 八、从 EduAgent 迁移策略
 
 ### 8.1 保留（直接搬过来）
 
@@ -873,7 +873,7 @@ docker/docker-compose.yml         ← 重写为单服务
 - [ ] LiteLLM 接入（支持 OpenAI 兼容端点）
 - [ ] 基础数据模型（users, sessions, messages, student_profiles）
 - [ ] SSE 流式对话接口（POST /api/chat）
-- [ ] 认证接口（保留 EduFlow 的 register/login/me）
+- [ ] 认证接口（保留 EduAgent 的 register/login/me）
 - [ ] 前端单页对话界面（/chat）
 - [ ] 基础学生画像（current_level, learning_goal）
 - [ ] 对话历史持久化
@@ -1011,7 +1011,7 @@ docker/docker-compose.yml         ← 重写为单服务
 ## 十、项目结构
 
 ```
-eduflow/
+eduagent/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py              # FastAPI 入口
@@ -1098,13 +1098,13 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: eduflow
-      POSTGRES_PASSWORD: eduflow
-      POSTGRES_DB: eduflow
+      POSTGRES_USER: eduagent
+      POSTGRES_PASSWORD: eduagent
+      POSTGRES_DB: eduagent
     ports: ["5432:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U eduflow"]
+      test: ["CMD-SHELL", "pg_isready -U eduagent"]
       interval: 5s
       retries: 5
 
@@ -1121,7 +1121,7 @@ services:
     build: ./backend
     ports: ["8000:8000"]
     environment:
-      DATABASE_URL: postgresql+asyncpg://eduflow:eduflow@postgres:5432/eduflow
+      DATABASE_URL: postgresql+asyncpg://eduagent:eduagent@postgres:5432/eduagent
       REDIS_URL: redis://redis:6379/0
       QDRANT_URL: http://qdrant:6333
       E2B_API_KEY: ${E2B_API_KEY:-}

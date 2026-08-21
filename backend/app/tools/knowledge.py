@@ -18,7 +18,7 @@ import litellm
 
 from app.config import settings
 
-COLLECTION = "eduflow"
+COLLECTION = "eduagent"
 _client: Optional["QdrantClient"] = None
 
 

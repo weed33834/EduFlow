@@ -17,7 +17,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="EduFlow Agent",
+    title="EduAgent",
     description="AI 编程学习 Agent",
     version="0.2.0",
     lifespan=lifespan,

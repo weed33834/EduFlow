@@ -3,4 +3,4 @@ __pycache__
 .git
 *.md
 .env
-eduflow.db
+eduagent.db

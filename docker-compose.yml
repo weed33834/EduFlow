@@ -2,13 +2,13 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: eduflow
-      POSTGRES_PASSWORD: eduflow
-      POSTGRES_DB: eduflow
+      POSTGRES_USER: eduagent
+      POSTGRES_PASSWORD: eduagent
+      POSTGRES_DB: eduagent
     ports: ["5432:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U eduflow"]
+      test: ["CMD-SHELL", "pg_isready -U eduagent"]
       interval: 5s
       retries: 5
 
@@ -21,7 +21,7 @@ services:
     build: ./backend
     ports: ["8000:8000"]
     environment:
-      DATABASE_URL: postgresql+asyncpg://eduflow:eduflow@postgres:5432/eduflow
+      DATABASE_URL: postgresql+asyncpg://eduagent:eduagent@postgres:5432/eduagent
       LITELLM_API_KEY: ${LITELLM_API_KEY:-}
       LITELLM_BASE_URL: ${LITELLM_BASE_URL:-https://api.openai.com/v1}
       LITELLM_MODEL: ${LITELLM_MODEL:-gpt-4o-mini}

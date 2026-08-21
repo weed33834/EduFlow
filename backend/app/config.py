@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str = "sqlite+aiosqlite:///./eduflow.db"
+    DATABASE_URL: str = "sqlite+aiosqlite:///./eduagent.db"
 
     # JWT
     JWT_SECRET: str = "change-me-in-production"

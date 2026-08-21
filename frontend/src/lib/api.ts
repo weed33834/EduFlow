@@ -1,5 +1,5 @@
 /**
- * EduFlow Agent 前端 API 客户端
+ * EduAgent 前端 API 客户端
  *
  * 直连后端（不走 Next.js rewrites，避免 SSE 超时）
  * 支持流式 SSE：status → stream → complete → [done]

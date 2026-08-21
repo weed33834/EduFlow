@@ -4,6 +4,6 @@ export const API_BASE =
 
 /** localStorage 键名 */
 export const STORAGE_KEYS = {
-  TOKEN: 'eduflow_token',
-  USER: 'eduflow_user',
+  TOKEN: 'eduagent_token',
+  USER: 'eduagent_user',
 } as const

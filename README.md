@@ -1,4 +1,4 @@
-# EduFlow Agent
+# EduAgent
 
 > AI 编程学习 Agent — 会教编程、会出题、会判题、会运行代码、会排复习的 AI 学习伙伴。
 
@@ -7,7 +7,7 @@
 ## 项目结构
 
 ```
-EduFlow/
+EduAgent/
 ├── backend/                  # FastAPI 后端（单服务）
 │   ├── app/
 │   │   ├── main.py           # 入口
@@ -51,8 +51,8 @@ EduFlow/
 ### Docker
 
 ```bash
-git clone https://github.com/weed33834/EduFlow.git
-cd EduFlow
+git clone https://github.com/weed33834/EduAgent.git
+cd EduAgent
 cp .env.example .env
 # 编辑 .env，填入 LITELLM_API_KEY
 LITELLM_API_KEY=your-key docker compose up -d --build

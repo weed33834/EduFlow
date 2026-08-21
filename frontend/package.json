@@ -1,5 +1,5 @@
 {
-  "name": "eduflow-agent",
+  "name": "eduagent",
   "version": "0.1.0",
   "private": true,
   "scripts": {
