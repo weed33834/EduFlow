@@ -1,6 +1,11 @@
-"""对话路由（SSE 流式）— Agent 核心入口"""
+"""对话路由（SSE 流式）— Agent 核心入口
+
+集成开源组件：
+- LangGraph Checkpointer：自动管理对话历史（无需手动查数据库）
+- fsrs 包：间隔重复，学生学过概念后自动创建复习卡片
+"""
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -10,7 +15,7 @@ from sqlalchemy import select
 
 from app.database import get_db
 from app.deps import get_current_user
-from app.models import User, Session, Message, StudentProfile
+from app.models import User, Session, Message, StudentProfile, ReviewItem
 from app.agents.graph import agent_graph
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -29,8 +34,8 @@ async def chat(
 ):
     """SSE 流式对话
 
-    前端用 EventSource 或 fetch + ReadableStream 接收。
-    v0.1.0 先返回完整回复（非增量流式），v0.6.0 再做真正的流式输出。
+    对话历史由 LangGraph MemorySaver 自动管理（按 session_id 持久化），
+    不再手动查数据库拼 history。
     """
     # 获取或创建会话
     if req.session_id:
@@ -45,23 +50,13 @@ async def chat(
         db.add(session)
         await db.flush()
 
-    # 保存用户消息
+    # 保存用户消息（给前端展示用，Agent 历史由 checkpointer 管）
     db.add(Message(
         session_id=session.id,
         role="user",
         content=req.message,
     ))
     await db.commit()
-
-    # 获取对话历史（最近 6 条消息 = 3 轮对话）
-    msg_result = await db.execute(
-        select(Message)
-        .where(Message.session_id == session.id)
-        .order_by(Message.created_at)
-        .limit(20)
-    )
-    all_msgs = msg_result.scalars().all()
-    history = [{"role": m.role, "content": m.content} for m in all_msgs[:-1]]  # 排除刚加的用户消息
 
     # 获取学生画像
     profile_result = await db.execute(
@@ -73,16 +68,33 @@ async def chat(
         "learning_goal": profile.learning_goal or "" if profile else "",
     }
 
+    # 查询到期的 FSRS 复习项
+    now = datetime.now()
+    review_result = await db.execute(
+        select(ReviewItem)
+        .where(ReviewItem.user_id == user.id, ReviewItem.due <= now)
+        .order_by(ReviewItem.due)
+        .limit(3)
+    )
+    review_items = [
+        {"concept": r.concept, "card_data": r.card_data, "id": r.id}
+        for r in review_result.scalars().all()
+    ]
+
     # 执行 Agent 状态机
+    # checkpointer 通过 thread_id 自动恢复之前的对话历史
     initial_state = {
         "user_message": req.message,
         "user_id": user.id,
         "session_id": session.id,
-        "history": history,
         "student_profile": profile_dict,
+        "review_items": review_items,
     }
 
-    final_state = await agent_graph.ainvoke(initial_state)
+    final_state = await agent_graph.ainvoke(
+        initial_state,
+        config={"configurable": {"thread_id": str(session.id)}},
+    )
 
     # 获取回复
     response_chunks = final_state.get("response_chunks", ["抱歉，我暂时无法回复。"])
@@ -105,6 +117,32 @@ async def chat(
     ))
     session.ended_at = datetime.now()
     await db.commit()
+
+    # 如果学生学了新概念，用 fsrs 包创建间隔重复卡片
+    if final_state.get("intent") == "learn_concept" and final_state.get("teach_content"):
+        try:
+            from fsrs import Card, Scheduler
+
+            scheduler = Scheduler()
+            card = Card()
+            # 初始评分 3（Good）— 学生刚学完，假设记得
+            card, _ = scheduler.review_card(card, rating=3)
+
+            due = card.due
+            # 确保 due 是 naive datetime（SQLite 不支持 tz-aware）
+            if hasattr(due, 'tzinfo') and due.tzinfo:
+                due = due.replace(tzinfo=None)
+
+            db.add(ReviewItem(
+                user_id=user.id,
+                concept=req.message[:200],
+                card_data=card.to_dict(),
+                due=due,
+            ))
+            await db.commit()
+        except Exception:
+            # FSRS 失败不影响主流程
+            pass
 
     # SSE 返回
     async def event_stream():

@@ -84,3 +84,19 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
     session: Mapped["Session"] = relationship(back_populates="messages")
+
+
+class ReviewItem(Base):
+    """FSRS 间隔重复项 — 用开源 fsrs 包管理记忆曲线"""
+    __tablename__ = "review_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    concept: Mapped[str] = mapped_column(String(200))
+    # FSRS 卡片数据（序列化存储，Card.to_dict() / Card.from_dict()）
+    card_data: Mapped[dict] = mapped_column(JSON, default=dict)
+    due: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)

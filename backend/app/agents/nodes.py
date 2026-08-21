@@ -1,6 +1,6 @@
 """Agent 状态机节点 — v0.1.0 最小闭环
 
-状态流：understand → recall → plan → [teach | quiz] → respond → reflect
+状态流：understand → recall → plan → [teach | quiz | review] → respond → reflect
 """
 from app.agents.state import AgentState
 from app.tools.llm import chat_completion, classify_intent, generate_json
@@ -50,7 +50,11 @@ async def understand(state: AgentState) -> AgentState:
         else:
             intent = "ask_question"
 
-    return {**state, "intent": intent}
+    # 把当前用户消息加入历史（由 LangGraph Checkpointer 自动持久化）
+    history = state.get("history", [])
+    history = list(history) + [{"role": "user", "content": message}]
+
+    return {**state, "intent": intent, "history": history}
 
 
 async def recall(state: AgentState) -> AgentState:
@@ -66,14 +70,19 @@ async def plan(state: AgentState) -> AgentState:
     """决策下一步行动"""
     intent = state.get("intent", "ask_question")
 
-    route = {
-        "learn_concept": "teach",
-        "practice": "quiz",
-        "ask_question": "teach",  # 答疑也走 teach
-        "chitchat": "respond",
-    }
+    # 检查是否有到期的复习项（FSRS 间隔重复）
+    review_items = state.get("review_items", [])
+    if review_items and intent not in ("practice", "chitchat"):
+        action = "review"
+    else:
+        route = {
+            "learn_concept": "teach",
+            "practice": "quiz",
+            "ask_question": "teach",  # 答疑也走 teach
+            "chitchat": "respond",
+        }
+        action = route.get(intent, "respond")
 
-    action = route.get(intent, "respond")
     return {**state, "action_plan": action}
 
 
@@ -116,32 +125,64 @@ async def quiz(state: AgentState) -> AgentState:
     return {**state, "quiz_question": question}
 
 
-async def respond(state: AgentState) -> AgentState:
-    """组织回复"""
-    # 1. 如果有讲解内容
-    if state.get("teach_content"):
-        return {**state, "response_chunks": [state["teach_content"]]}
+async def review(state: AgentState) -> AgentState:
+    """复习节点 — 基于开源 fsrs 包的间隔重复，生成复习内容"""
+    review_items = state.get("review_items", [])
 
-    # 2. 如果有题目
-    if state.get("quiz_question"):
-        formatted = _format_quiz(state["quiz_question"])
-        return {**state, "response_chunks": [formatted]}
+    if not review_items:
+        return {**state, "review_content": ""}
 
-    # 3. 通用回复
-    message = state["user_message"]
-    history = state.get("history", [])
-    messages: list[dict] = []
-    for h in history[-6:]:
-        if h.get("role") and h.get("content"):
-            messages.append({"role": h["role"], "content": str(h["content"])})
-    messages.append({"role": "user", "content": message})
+    # 取第一个到期项
+    item = review_items[0]
+    concept = item.get("concept", "")
 
     if settings.llm_available:
-        reply = await chat_completion(messages, system_prompt=GENERAL_PROMPT)
+        prompt = f"学生之前学过「{concept}」，现在需要复习。请用 1-2 句话简要回顾这个概念，然后出一道简单的判断题检验学生是否还记得。"
+        content = await chat_completion(
+            [{"role": "user", "content": prompt}],
+            system_prompt="你是一个编程复习助手。简洁回顾概念并出题。",
+            temperature=0.5,
+            max_tokens=500,
+        )
     else:
-        reply = _general_fallback(message)
+        content = f"复习：{concept}\n\n请简要描述你对「{concept}」的理解。"
 
-    return {**state, "response_chunks": [reply]}
+    return {**state, "review_content": content}
+
+
+async def respond(state: AgentState) -> AgentState:
+    """组织回复"""
+    reply_text = ""
+
+    # 1. 如果有复习内容（FSRS 间隔重复）
+    if state.get("review_content"):
+        reply_text = state["review_content"]
+    # 2. 如果有讲解内容
+    elif state.get("teach_content"):
+        reply_text = state["teach_content"]
+    # 3. 如果有题目
+    elif state.get("quiz_question"):
+        reply_text = _format_quiz(state["quiz_question"])
+    # 4. 通用回复
+    else:
+        message = state["user_message"]
+        history = state.get("history", [])
+        messages: list[dict] = []
+        for h in history[-6:]:
+            if h.get("role") and h.get("content"):
+                messages.append({"role": h["role"], "content": str(h["content"])})
+        messages.append({"role": "user", "content": message})
+
+        if settings.llm_available:
+            reply_text = await chat_completion(messages, system_prompt=GENERAL_PROMPT)
+        else:
+            reply_text = _general_fallback(message)
+
+    # 把助手回复加入历史（由 LangGraph Checkpointer 自动持久化）
+    history = state.get("history", [])
+    history = list(history) + [{"role": "assistant", "content": reply_text}]
+
+    return {**state, "response_chunks": [reply_text], "history": history}
 
 
 async def reflect(state: AgentState) -> AgentState:

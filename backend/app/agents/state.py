@@ -17,4 +17,6 @@ class AgentState(TypedDict, total=False):
     # 工具执行结果
     teach_content: str
     quiz_question: dict
+    review_items: list[dict]  # 到期的复习项（FSRS）
+    review_content: str  # 复习内容
     response_chunks: list[str]
