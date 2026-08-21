@@ -1,18 +1,39 @@
-node_modules/
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
 dist/
-.next/
+build/
+.venv/
+venv/
+env/
 .env
 .env.local
-*.pyc
-__pycache__/
-.venv/
-*.egg-info/
-.vscode/
-.idea/
-*.log
-.DS_Store
-coverage/
 *.db
 eduflow.db
+
+# Node
+node_modules/
+.next/
+out/
+build/
 *.tsbuildinfo
 next-env.d.ts
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+*.cache
+coverage/
+.nyc_output/
