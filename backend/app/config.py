@@ -1,0 +1,33 @@
+"""应用配置"""
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    # Database
+    DATABASE_URL: str = "sqlite+aiosqlite:///./eduflow.db"
+
+    # JWT
+    JWT_SECRET: str = "change-me-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 1 day
+
+    # LLM (LiteLLM — 支持 OpenAI / Claude / Gemini 等 100+ 模型)
+    LITELLM_API_KEY: str = ""
+    LITELLM_BASE_URL: str = "https://api.openai.com/v1"
+    LITELLM_MODEL: str = "gpt-4o-mini"
+
+    # CORS
+    CORS_ORIGINS: str = "http://localhost:3000"
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def llm_available(self) -> bool:
+        return bool(self.LITELLM_API_KEY)
+
+
+settings = Settings()
