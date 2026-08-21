@@ -1,6 +1,13 @@
-"""Agent 状态机节点 — v0.1.0 最小闭环
+"""Agent 状态机节点 — v0.2.0
 
-状态流：understand → recall → plan → [teach | quiz | review] → respond → reflect
+状态流：understand → recall → plan → [teach | quiz | code | review | respond] → respond → reflect
+
+集成开源组件：
+- LiteLLM：LLM 统一接口 + JSON mode
+- E2B：代码沙箱（开源，云端 API）
+- Qdrant：向量知识库 RAG（开源）
+- Mem0：长期记忆（开源）
+- fsrs：间隔重复（开源）
 """
 from app.agents.state import AgentState
 from app.tools.llm import chat_completion, classify_intent, generate_json
@@ -28,6 +35,9 @@ QUIZ_PROMPT = """你是一个编程出题专家，擅长根据学生水平生成
 GENERAL_PROMPT = """你是一个友好的编程学习助手。用中文简洁回答学生的问题。
 如果学生是在回答之前出的题，判断对错并给出解析。"""
 
+CODE_FEEDBACK_PROMPT = """你是编程老师。学生提交了代码，代码沙箱已执行完毕。
+请根据执行结果给学生反馈：指出问题、给出建议、表扬正确的地方。简洁，不超过 200 字。"""
+
 
 # ── 节点实现 ──────────────────────────────────────────────
 
@@ -41,7 +51,9 @@ async def understand(state: AgentState) -> AgentState:
     else:
         # 降级：关键词匹配
         msg = message.lower()
-        if any(k in msg for k in ["什么是", "解释", "讲解", "原理", "怎么理解"]):
+        if any(k in msg for k in ["def ", "print(", "import ", "class ", "console.log"]):
+            intent = "run_code"
+        elif any(k in msg for k in ["什么是", "解释", "讲解", "原理", "怎么理解"]):
             intent = "learn_concept"
         elif any(k in msg for k in ["出题", "练习", "题目", "考考", "quiz", "题"]):
             intent = "practice"
@@ -58,12 +70,37 @@ async def understand(state: AgentState) -> AgentState:
 
 
 async def recall(state: AgentState) -> AgentState:
-    """检索记忆（v0.1.0 空操作 — v0.4.0 接 Qdrant，v0.5.0 接 Mem0）"""
+    """检索记忆 — Mem0 长期记忆 + Qdrant 知识库 RAG"""
     profile = state.get("student_profile") or {
         "current_level": "beginner",
         "learning_goal": "",
     }
-    return {**state, "student_profile": profile}
+
+    message = state.get("user_message", "")
+    user_id = str(state.get("user_id", ""))
+
+    # 从 Mem0 检索长期记忆
+    memories = []
+    try:
+        from app.tools.memory import search_memory
+        memories = await search_memory(user_id, message)
+    except Exception:
+        pass
+
+    # 从 Qdrant 知识库检索相关文档
+    knowledge = []
+    try:
+        from app.tools.knowledge import search_knowledge
+        knowledge = await search_knowledge(message)
+    except Exception:
+        pass
+
+    return {
+        **state,
+        "student_profile": profile,
+        "memory_context": memories,
+        "knowledge_context": knowledge,
+    }
 
 
 async def plan(state: AgentState) -> AgentState:
@@ -72,12 +109,13 @@ async def plan(state: AgentState) -> AgentState:
 
     # 检查是否有到期的复习项（FSRS 间隔重复）
     review_items = state.get("review_items", [])
-    if review_items and intent not in ("practice", "chitchat"):
+    if review_items and intent not in ("practice", "run_code", "chitchat"):
         action = "review"
     else:
         route = {
             "learn_concept": "teach",
             "practice": "quiz",
+            "run_code": "code",
             "ask_question": "teach",  # 答疑也走 teach
             "chitchat": "respond",
         }
@@ -98,7 +136,22 @@ async def teach(state: AgentState) -> AgentState:
     for h in history[-6:]:  # 最近 3 轮
         if h.get("role") and h.get("content"):
             messages.append({"role": h["role"], "content": str(h["content"])})
-    messages.append({"role": "user", "content": f"学生问题：{message}\n学生水平：{level}"})
+
+    # 加入知识库上下文（如果有）
+    knowledge = state.get("knowledge_context", [])
+    context_parts = []
+    if knowledge:
+        context_parts.append("参考资料：\n" + "\n".join(k.get("text", "")[:200] for k in knowledge[:2]))
+
+    # 加入记忆上下文（如果有）
+    memories = state.get("memory_context", [])
+    if memories:
+        context_parts.append("学生记忆：\n" + "\n".join(m.get("text", "")[:100] for m in memories[:3]))
+
+    user_content = f"学生问题：{message}\n学生水平：{level}"
+    if context_parts:
+        user_content += "\n\n" + "\n\n".join(context_parts)
+    messages.append({"role": "user", "content": user_content})
 
     if settings.llm_available:
         content = await chat_completion(messages, system_prompt=TEACH_PROMPT)
@@ -123,6 +176,40 @@ async def quiz(state: AgentState) -> AgentState:
         question = _quiz_fallback(message)
 
     return {**state, "quiz_question": question}
+
+
+async def code(state: AgentState) -> AgentState:
+    """代码执行节点 — 用 E2B 开源沙箱执行学生代码"""
+    from app.tools.sandbox import execute_code
+
+    message = state["user_message"]
+
+    # 在 E2B 沙箱中执行代码
+    result = await execute_code(message)
+
+    # 让 LLM 根据执行结果给反馈
+    if settings.llm_available:
+        if result["success"]:
+            feedback_prompt = f"学生代码执行成功。\n代码：\n{message}\n\n输出：\n{result['stdout']}\n\n请简要评价代码和输出。"
+        else:
+            feedback_prompt = f"学生代码执行失败。\n代码：\n{message}\n\n错误：\n{result['stderr']}\n\n请指出问题并给出修复建议。"
+
+        content = await chat_completion(
+            [{"role": "user", "content": feedback_prompt}],
+            system_prompt=CODE_FEEDBACK_PROMPT,
+            temperature=0.3,
+            max_tokens=500,
+        )
+    else:
+        # 降级：直接返回执行结果
+        stdout = result.get("stdout", "")
+        stderr = result.get("stderr", "")
+        if result["success"]:
+            content = f"代码执行成功 ✅\n\n输出：\n{stdout}"
+        else:
+            content = f"代码执行失败 ❌\n\n错误：\n{stderr}"
+
+    return {**state, "code_result": result, "teach_content": content}
 
 
 async def review(state: AgentState) -> AgentState:
@@ -186,7 +273,21 @@ async def respond(state: AgentState) -> AgentState:
 
 
 async def reflect(state: AgentState) -> AgentState:
-    """反思与记忆更新（v0.1.0 只标记，不做实际更新 — v0.5.0 接记忆层）"""
+    """反思 — 用 Mem0 保存对话记忆，FSRS 卡片由 chat.py 路由层管理"""
+    user_id = str(state.get("user_id", ""))
+    message = state.get("user_message", "")
+    reply = ""
+    if state.get("response_chunks"):
+        reply = state["response_chunks"][0]
+
+    # 保存对话到 Mem0（自动提取关键信息）
+    if user_id and message and reply:
+        try:
+            from app.tools.memory import add_memory
+            await add_memory(user_id, f"学生问：{message}\n助手答：{reply}")
+        except Exception:
+            pass
+
     return state
 
 

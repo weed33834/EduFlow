@@ -75,11 +75,12 @@ async def stream_chat(
 async def classify_intent(message: str) -> str:
     """意图分类，返回标签（LiteLLM JSON mode 保证输出可靠）"""
     prompt = f"""判断学生意图，返回 JSON：
-{{"intent": "learn_concept" 或 "practice" 或 "ask_question" 或 "chitchat"}}
+{{"intent": "learn_concept" 或 "practice" 或 "run_code" 或 "ask_question" 或 "chitchat"}}
 
 规则：
 - learn_concept: 学新概念（如"什么是递归"）
 - practice: 想练习（如"给我出几道题"）
+- run_code: 想运行代码（消息包含代码块，如 def/print/import，或说"运行这段代码"）
 - ask_question: 答疑（如"为什么这里报错"）
 - chitchat: 闲聊（如"你好"）
 

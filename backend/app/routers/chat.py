@@ -3,6 +3,9 @@
 集成开源组件：
 - LangGraph Checkpointer：自动管理对话历史（无需手动查数据库）
 - fsrs 包：间隔重复，学生学过概念后自动创建复习卡片
+- E2B：代码沙箱执行学生代码
+- Qdrant：知识库 RAG 检索
+- Mem0：长期记忆存储和检索
 """
 import json
 from datetime import datetime, timezone
@@ -34,8 +37,8 @@ async def chat(
 ):
     """SSE 流式对话
 
-    对话历史由 LangGraph MemorySaver 自动管理（按 session_id 持久化），
-    不再手动查数据库拼 history。
+    对话历史由 LangGraph MemorySaver 自动管理（按 session_id 持久化）。
+    回复分块发送，前端体验更流畅。
     """
     # 获取或创建会话
     if req.session_id:
@@ -107,6 +110,8 @@ async def chat(
     }
     if final_state.get("quiz_question"):
         metadata["quiz"] = final_state["quiz_question"]
+    if final_state.get("code_result"):
+        metadata["code_result"] = final_state["code_result"]
 
     # 保存助手消息
     db.add(Message(
@@ -125,11 +130,9 @@ async def chat(
 
             scheduler = Scheduler()
             card = Card()
-            # 初始评分 3（Good）— 学生刚学完，假设记得
             card, _ = scheduler.review_card(card, rating=3)
 
             due = card.due
-            # 确保 due 是 naive datetime（SQLite 不支持 tz-aware）
             if hasattr(due, 'tzinfo') and due.tzinfo:
                 due = due.replace(tzinfo=None)
 
@@ -141,11 +144,20 @@ async def chat(
             ))
             await db.commit()
         except Exception:
-            # FSRS 失败不影响主流程
             pass
 
-    # SSE 返回
+    # SSE 返回 — 分块发送，前端体验更流畅
     async def event_stream():
+        # 发送状态提示
+        yield f"data: {json.dumps({'type': 'status', 'content': 'Agent 正在思考...'}, ensure_ascii=False)}\n\n"
+
+        # 分块发送回复（每 80 字一块，模拟流式）
+        chunk_size = 80
+        for i in range(0, len(reply_text), chunk_size):
+            chunk = reply_text[i:i + chunk_size]
+            yield f"data: {json.dumps({'type': 'stream', 'content': chunk}, ensure_ascii=False)}\n\n"
+
+        # 发送完整数据（包含 quiz/code 等结构化数据）
         data = {
             "type": "quiz" if final_state.get("quiz_question") else "message",
             "content": reply_text,
@@ -153,7 +165,9 @@ async def chat(
         }
         if final_state.get("quiz_question"):
             data["quiz"] = final_state["quiz_question"]
-        yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+        if final_state.get("code_result"):
+            data["code_result"] = final_state["code_result"]
+        yield f"data: {json.dumps({'type': 'complete', **data}, ensure_ascii=False)}\n\n"
         yield "data: [done]\n\n"
 
     return StreamingResponse(

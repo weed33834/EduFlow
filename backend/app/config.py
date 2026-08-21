@@ -19,6 +19,15 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"
 
+    # E2B 代码沙箱（开源 — pip install e2b）
+    E2B_API_KEY: str = ""
+
+    # Qdrant 向量数据库（开源 — pip install qdrant-client）
+    QDRANT_URL: str = "http://localhost:6333"
+
+    # Mem0 长期记忆（开源 — pip install mem0ai）
+    MEM0_API_KEY: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
