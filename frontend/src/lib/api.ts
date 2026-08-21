@@ -2,6 +2,7 @@
  * EduFlow Agent 前端 API 客户端
  *
  * 直连后端（不走 Next.js rewrites，避免 SSE 超时）
+ * 支持流式 SSE：status → stream → complete → [done]
  */
 import { API_BASE, STORAGE_KEYS } from './constants'
 
@@ -52,6 +53,13 @@ export interface QuizData {
   answer: number
   explanation: string
   difficulty?: string
+}
+
+export interface CodeResult {
+  success: boolean
+  stdout: string
+  stderr: string
+  exit_code: number
 }
 
 /* ─────────────────── 认证存储 ─────────────────── */
@@ -177,19 +185,20 @@ export const profileAPI = {
     request('/profile', { method: 'PUT', body: JSON.stringify(data) }),
 }
 
-/* ─────────────────── 对话（SSE） ─────────────────── */
+/* ─────────────────── 对话（SSE 流式） ─────────────────── */
 
 export interface ChatResponseData {
-  type: 'message' | 'quiz'
+  type: 'status' | 'stream' | 'message' | 'quiz' | 'complete'
   content: string
-  session_id: number
+  session_id?: number
   quiz?: QuizData
+  code_result?: CodeResult
 }
 
 export async function chatStream(
   message: string,
   sessionId: number | null,
-  onDone: (data: ChatResponseData) => void,
+  onEvent: (data: ChatResponseData) => void,
   onError: (err: Error) => void,
 ) {
   const token = getToken()
@@ -229,7 +238,7 @@ export async function chatStream(
           }
           try {
             const parsed = JSON.parse(data) as ChatResponseData
-            onDone(parsed)
+            onEvent(parsed)
           } catch {
             /* 忽略解析失败 */
           }

@@ -158,16 +158,16 @@ async def chat(
             yield f"data: {json.dumps({'type': 'stream', 'content': chunk}, ensure_ascii=False)}\n\n"
 
         # 发送完整数据（包含 quiz/code 等结构化数据）
-        data = {
-            "type": "quiz" if final_state.get("quiz_question") else "message",
+        complete_data: dict = {
+            "type": "complete",
             "content": reply_text,
             "session_id": session.id,
         }
         if final_state.get("quiz_question"):
-            data["quiz"] = final_state["quiz_question"]
+            complete_data["quiz"] = final_state["quiz_question"]
         if final_state.get("code_result"):
-            data["code_result"] = final_state["code_result"]
-        yield f"data: {json.dumps({'type': 'complete', **data}, ensure_ascii=False)}\n\n"
+            complete_data["code_result"] = final_state["code_result"]
+        yield f"data: {json.dumps(complete_data, ensure_ascii=False)}\n\n"
         yield "data: [done]\n\n"
 
     return StreamingResponse(

@@ -4,18 +4,20 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Send, Sparkles, Loader2, Plus, Trash2, MessageSquare,
-  LogOut, ChevronLeft, Menu, X, Brain,
+  LogOut, Menu, X, Brain, Terminal,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import {
-  chatStream, sessionAPI, type ChatResponseData, type SessionSummary, type Message,
+  chatStream, sessionAPI,
+  type ChatResponseData, type SessionSummary, type CodeResult, type QuizData,
 } from '@/lib/api'
 import { cn, formatDateTime } from '@/lib/utils'
 
 interface ChatMsg {
   role: 'user' | 'assistant'
   content: string
-  quiz?: ChatResponseData['quiz']
+  quiz?: QuizData
+  codeResult?: CodeResult
   timestamp: number
 }
 
@@ -96,7 +98,7 @@ export default function ChatPage() {
         timestamp: userTs,
       }
 
-      // 助手占位消息，用固定 timestamp 匹配
+      // 助手占位消息
       const assistantTs = userTs + 1
       const assistantMsg: ChatMsg = {
         role: 'assistant',
@@ -109,7 +111,22 @@ export default function ChatPage() {
         trimmed,
         activeSessionId,
         (data: ChatResponseData) => {
-          // 用 assistantTs 精确匹配占位消息
+          if (data.type === 'status') {
+            // 状态提示 — 不更新消息内容，thinking 指示器会自动显示
+            return
+          }
+          if (data.type === 'stream') {
+            // 流式文本 — 追加到消息内容
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.timestamp === assistantTs
+                  ? { ...m, content: m.content + data.content }
+                  : m,
+              ),
+            )
+            return
+          }
+          // type === 'complete' — 设置最终内容 + 元数据
           setMessages((prev) =>
             prev.map((m) =>
               m.timestamp === assistantTs
@@ -117,6 +134,7 @@ export default function ChatPage() {
                     role: 'assistant',
                     content: data.content,
                     quiz: data.quiz,
+                    codeResult: data.code_result,
                     timestamp: assistantTs,
                   }
                 : m,
@@ -185,7 +203,6 @@ export default function ChatPage() {
           sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
         )}
       >
-        {/* 侧边栏头部 */}
         <div className="flex items-center justify-between p-3 border-b border-gray-100">
           <span className="text-sm font-bold text-gray-700">对话历史</span>
           <button
@@ -196,7 +213,6 @@ export default function ChatPage() {
           </button>
         </div>
 
-        {/* 新对话 */}
         <div className="p-3">
           <button
             onClick={handleNewChat}
@@ -206,7 +222,6 @@ export default function ChatPage() {
           </button>
         </div>
 
-        {/* 会话列表 */}
         <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-1">
           {loadingSessions ? (
             <div className="text-center py-4 text-sm text-gray-400">加载中...</div>
@@ -244,7 +259,6 @@ export default function ChatPage() {
           )}
         </div>
 
-        {/* 用户信息 */}
         <div className="p-3 border-t border-gray-100">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 min-w-0">
@@ -266,7 +280,6 @@ export default function ChatPage() {
         </div>
       </aside>
 
-      {/* 遮罩 */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/30 z-30 lg:hidden"
@@ -276,7 +289,6 @@ export default function ChatPage() {
 
       {/* 主区域 */}
       <main className="flex-1 flex flex-col min-w-0">
-        {/* 顶部栏 */}
         <header className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-shrink-0">
           <div className="flex items-center gap-3">
             <button
@@ -321,10 +333,14 @@ export default function ChatPage() {
               </div>
             </div>
           ) : (
-            messages.map((msg, i) => <MessageBubble key={i} message={msg} />)
+            messages.map((msg, i) => (
+              msg.content || msg.role === 'user' ? (
+                <MessageBubble key={i} message={msg} />
+              ) : null
+            ))
           )}
 
-          {sending && messages[messages.length - 1]?.role === 'assistant' && !messages[messages.length - 1]?.content && (
+          {sending && messages.length > 0 && messages[messages.length - 1]?.role === 'assistant' && !messages[messages.length - 1]?.content && (
             <div className="flex items-start gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center flex-shrink-0">
                 <Brain className="w-4 h-4 text-white" />
@@ -394,6 +410,10 @@ function MessageBubble({ message }: { message: ChatMsg }) {
         <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
           {message.content}
         </p>
+        {/* 代码执行结果卡片 */}
+        {message.codeResult && (
+          <CodeResultCard result={message.codeResult} />
+        )}
         {/* 题目卡片 */}
         {message.quiz && (
           <QuizCard quiz={message.quiz} />
@@ -403,9 +423,37 @@ function MessageBubble({ message }: { message: ChatMsg }) {
   )
 }
 
+/* ─────────────────── 代码执行结果卡片 ─────────────────── */
+
+function CodeResultCard({ result }: { result: CodeResult }) {
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-100">
+      <div className="text-xs font-medium text-gray-600 mb-2 flex items-center gap-1">
+        <Terminal className="w-3 h-3" /> 代码执行结果
+        <span className={cn('ml-1', result.success ? 'text-green-600' : 'text-red-600')}>
+          {result.success ? '✓ 成功' : '✗ 失败'}
+        </span>
+      </div>
+      {result.stdout && (
+        <div className="bg-gray-900 text-green-400 p-3 rounded-lg text-xs font-mono overflow-x-auto mb-2">
+          <pre className="whitespace-pre-wrap">{result.stdout}</pre>
+        </div>
+      )}
+      {result.stderr && (
+        <div className="bg-gray-900 text-red-400 p-3 rounded-lg text-xs font-mono overflow-x-auto">
+          <pre className="whitespace-pre-wrap">{result.stderr}</pre>
+        </div>
+      )}
+      {!result.stdout && !result.stderr && (
+        <div className="text-xs text-gray-400 italic">(无输出)</div>
+      )}
+    </div>
+  )
+}
+
 /* ─────────────────── 题目卡片 ─────────────────── */
 
-function QuizCard({ quiz }: { quiz: NonNullable<ChatResponseData['quiz']> }) {
+function QuizCard({ quiz }: { quiz: QuizData }) {
   const [selected, setSelected] = useState<number | null>(null)
   const [showResult, setShowResult] = useState(false)
 
@@ -465,5 +513,5 @@ const QUICK_QUESTIONS = [
   '什么是 Python 递归？',
   '给我出几道 Python 基础题',
   '列表和元组有什么区别？',
-  '解释一下面向对象编程',
+  '帮我运行：print(sum(range(1, 101)))',
 ]
