@@ -36,16 +36,8 @@ async def understand(state: AgentState) -> AgentState:
     message = state["user_message"]
 
     if settings.llm_available:
+        # classify_intent 用 LiteLLM JSON mode 返回干净标签，无需手动规范化
         intent = await classify_intent(message)
-        # 规范化标签
-        if "learn" in intent or "concept" in intent:
-            intent = "learn_concept"
-        elif "practice" in intent or "quiz" in intent or "题" in intent:
-            intent = "practice"
-        elif "chat" in intent or "闲" in intent or "你好" in message.lower():
-            intent = "chitchat"
-        else:
-            intent = "ask_question"
     else:
         # 降级：关键词匹配
         msg = message.lower()
