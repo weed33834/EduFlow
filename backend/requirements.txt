@@ -11,4 +11,4 @@ passlib[bcrypt]==1.7.4
 python-multipart==0.0.20
 litellm==1.55.10
 langgraph==0.2.68
-httpx==0.28.1
+httpx>=0.23.0,<0.28.0
