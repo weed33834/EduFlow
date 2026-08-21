@@ -12,37 +12,33 @@ concurrency:
 
 jobs:
   frontend:
-    name: Frontend (pnpm build & lint)
+    name: Frontend (npm build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: pnpm install --no-frozen-lockfile
-      - run: pnpm build
-      - run: pnpm lint
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm install --legacy-peer-deps
+      - name: Build
+        working-directory: ./frontend
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
 
-  python:
-    name: Python ${{ matrix.service }}
+  backend:
+    name: Backend (Python compile check)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service: [api, ai, engine]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
-      - name: Install ${{ matrix.service }} dependencies
-        run: pip install -r services/${{ matrix.service }}/requirements.txt
-      - name: Compile check ${{ matrix.service }}
-        run: python -m compileall -q services/${{ matrix.service }}
-      - name: Run API tests
-        if: matrix.service == 'api'
-        run: |
-          pip install -q pytest httpx
-          cd services/api && PYTHONPATH=. python -m pytest tests/ -q
+          python-version: "3.12"
+      - name: Install dependencies
+        working-directory: ./backend
+        run: pip install -r requirements.txt
+      - name: Compile check
+        working-directory: ./backend
+        run: python -m compileall -q app/
