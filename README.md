@@ -130,8 +130,27 @@ python scripts/ingest_knowledge.py --dir ../docs --pattern "**/*.md"
 
 ## 可观测性与限流
 
-- 每次 LLM 调用记录结构化日志：`llm.call model=... dur_ms=... out_chars=... stream=...`，失败带堆栈
-- chat 接口按用户限流（默认 20 次/分钟），认证接口按 IP 限流（默认 10 次/分钟），超限返回 429 + Retry-After
+**本地追踪（默认开启，零账号零依赖）**
+
+每次请求生成 trace_id，所有 LLM 调用（含失败）记录 span 到 `backend/logs/traces.jsonl`：
+
+```bash
+cd backend
+python scripts/view_traces.py               # 最近 20 条调用链
+python scripts/view_traces.py --session 42  # 按会话过滤
+```
+
+**外部面板（可选增强）**
+
+| 方案 | 需要云账号 | 接入方式 |
+|---|---|---|
+| LangSmith | ✅ 必须 | `LITELLM_SUCCESS_CALLBACK=langsmith` + 安装其 SDK |
+| Langfuse Cloud | ✅ 云端版要 | `LITELLM_SUCCESS_CALLBACK=langfuse` + SDK |
+| Langfuse 自托管 | ❌ 开源版 docker 起 | 同上，指向自建地址 |
+| Phoenix (Arize) | ❌ 本地 pip 即起 UI | litellm otel 回调 / OTLP |
+
+**限流**：chat 按用户（默认 20 次/分钟）、认证按 IP（默认 10 次/分钟），超限 429+Retry-After；
+配 `REDIS_URL` 启用跨 worker 分布式计数，未配置回退进程内实现。
 
 ## 测试
 
