@@ -4,64 +4,105 @@
 
 :root {
   --brand: #2563eb;
-  /* 主题变量：浅色 */
+  --brand-2: #4f46e5;
+  /* 浅色主题 */
   --surface: #ffffff;
-  --surface-translucent: rgba(255, 255, 255, 0.8);
-  --surface-hover: #f9fafb;
-  --border: #e5e7eb;
-  --text-strong: #111827;
-  --text: #1f2937;
-  --text-muted: #6b7280;
-  --text-faint: #9ca3af;
+  --surface-translucent: rgba(255, 255, 255, 0.82);
+  --surface-hover: #f8fafc;
+  --surface-sunken: #f1f5f9;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --text-strong: #0f172a;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --text-faint: #94a3b8;
 }
 
 .dark {
   color-scheme: dark;
-  /* 主题变量：深色 */
-  --surface: #111827;
-  --surface-translucent: rgba(17, 24, 39, 0.82);
-  --surface-hover: #1f2937;
-  --border: #374151;
-  --text-strong: #f9fafb;
-  --text: #e5e7eb;
-  --text-muted: #9ca3af;
-  --text-faint: #6b7280;
+  /* 深色主题：深蓝灰而非纯黑 */
+  --surface: #16213a;
+  --surface-translucent: rgba(22, 33, 58, 0.85);
+  --surface-hover: #1e2a45;
+  --surface-sunken: #0f172a;
+  --border: #2c3a55;
+  --border-strong: #3d4d6e;
+  --text-strong: #f1f5f9;
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --text-faint: #64748b;
 }
 
 body {
-  background-color: var(--surface-hover);
+  background-color: var(--surface-sunken);
   color: var(--text);
   @apply antialiased;
+  font-feature-settings: 'cv02', 'cv03';
 }
 
-/* ── 组件类（随主题变量换肤） ──────────────────────────────── */
+::selection {
+  background-color: rgba(37, 99, 235, 0.25);
+}
+
+/* ── 背景装饰 ──────────────────────────────── */
+
+.bg-aurora {
+  position: relative;
+  isolation: isolate;
+}
+.bg-aurora::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(48rem 24rem at 15% -10%, rgba(59, 130, 246, 0.16), transparent 60%),
+    radial-gradient(42rem 22rem at 90% 0%, rgba(99, 102, 241, 0.14), transparent 55%),
+    radial-gradient(36rem 20rem at 50% 110%, rgba(14, 165, 233, 0.10), transparent 60%);
+}
+.dark .bg-aurora::before {
+  background:
+    radial-gradient(48rem 24rem at 15% -10%, rgba(59, 130, 246, 0.18), transparent 60%),
+    radial-gradient(42rem 22rem at 90% 0%, rgba(99, 102, 241, 0.16), transparent 55%),
+    radial-gradient(36rem 20rem at 50% 110%, rgba(56, 189, 248, 0.08), transparent 60%);
+}
+.bg-grid::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(to right, rgba(100, 116, 139, 0.09) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(100, 116, 139, 0.09) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 75%);
+}
+
+/* ── 组件类 ──────────────────────────────── */
 
 .glass-card {
   background-color: var(--surface-translucent);
   border: 1px solid var(--border);
-  @apply backdrop-blur-sm rounded-2xl shadow-sm;
+  @apply backdrop-blur-xl rounded-2xl shadow-sm;
 }
 
 .btn-primary {
-  @apply inline-flex items-center justify-center gap-2 bg-brand-600 text-white font-medium px-4 py-2.5 rounded-xl hover:bg-brand-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed;
+  background-image: linear-gradient(135deg, #2563eb, #4f46e5);
+  @apply inline-flex items-center justify-center gap-2 text-white font-medium px-4 py-2.5 rounded-xl shadow-sm transition-all duration-200 hover:brightness-110 hover:shadow-md active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:brightness-100;
 }
 
 .btn-secondary {
   background-color: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   color: var(--text);
-  @apply inline-flex items-center justify-center gap-2 font-medium px-4 py-2.5 rounded-xl transition-colors disabled:opacity-60;
-}
-
-.btn-secondary:hover {
-  background-color: var(--surface-hover);
+  @apply inline-flex items-center justify-center gap-2 font-medium px-4 py-2.5 rounded-xl shadow-sm transition-all duration-200 hover:bg-slate-50 hover:-translate-y-px active:translate-y-0 disabled:opacity-60 dark:hover:bg-slate-800;
 }
 
 .input-field {
   background-color: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   color: var(--text-strong);
-  @apply w-full px-4 py-2.5 rounded-xl placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all dark:placeholder-gray-500;
+  @apply w-full px-4 py-2.5 rounded-xl placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500/70 focus:border-brand-500 transition-all dark:placeholder-gray-500;
 }
 
 .label {
@@ -73,7 +114,18 @@ body {
   @apply w-full h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden;
 }
 
-/* ── 散落工具类的主题映射（.dark 下重定义常用灰阶） ─────────── */
+.chip {
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background-color: var(--surface);
+  @apply inline-flex items-center px-4 py-2.5 rounded-xl text-sm transition-all duration-200 cursor-pointer hover:border-brand-400 hover:text-brand-600 dark:hover:text-brand-300 hover:-translate-y-px hover:shadow-sm;
+}
+
+.icon-tile {
+  @apply w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0;
+}
+
+/* ── 深浅色散落工具类映射 ─────────────────── */
 
 .dark .text-gray-900 { color: var(--text-strong); }
 .dark .text-gray-900\/90 { color: var(--text-strong); }
@@ -94,7 +146,6 @@ body {
 .dark .border-gray-100,
 .dark .border-gray-200 { border-color: var(--border); }
 
-/* 气泡内代码块保持深底亮字（两种主题下都可读） */
 pre, code {
   color-scheme: light dark;
 }
@@ -102,25 +153,44 @@ pre, code {
 /* ── 动画 ──────────────────────────────── */
 
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(4px); }
+  from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
 .animate-fade-in {
-  animation: fade-in 0.2s ease-out;
+  animation: fade-in 0.25s ease-out both;
+}
+.animate-delay-1 { animation-delay: 0.06s; }
+.animate-delay-2 { animation-delay: 0.12s; }
+.animate-delay-3 { animation-delay: 0.18s; }
+
+.animate-float-slow {
+  animation: float-slow 7s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in, .animate-float-slow { animation: none; }
 }
 
 /* ── 滚动条 ──────────────────────────────── */
 
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background-color: var(--border);
+  background-color: var(--border-strong);
   border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
   background-color: var(--text-faint);

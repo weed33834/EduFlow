@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Mail, Lock, User, Loader2, ArrowRight, Eye, EyeOff } from 'lucide-react'
+import { Mail, Lock, User, Loader2, ArrowRight, Eye, EyeOff, Brain } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { ApiError } from '@/lib/api'
 
@@ -33,8 +33,14 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center px-4 py-8">
+    <main className="min-h-screen bg-aurora bg-grid flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md">
+        
+        <div className="flex justify-center mb-5">
+          <span className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-600 to-indigo-600 flex items-center justify-center shadow-lg">
+            <Brain className="w-7 h-7 text-white" />
+          </span>
+        </div>
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-gray-900">注册 EduAgent</h1>
           <p className="text-sm text-gray-500 mt-1">开始跟 AI 学习编程</p>
