@@ -305,6 +305,13 @@ async def update_profile_on_judge(db, user_id: int, correct: bool, concept: str)
     setattr(profile, field, items[-20:])
 
 
+def _naive_due(card_due) -> datetime:
+    """fsrs 返回的 due 可能带时区；入库统一剥离为 naive datetime"""
+    if hasattr(card_due, "tzinfo") and card_due.tzinfo:
+        return card_due.replace(tzinfo=None)
+    return card_due
+
+
 async def apply_fsrs_reschedule(db, user_id: int, judge_result: dict) -> None:
     """按判题结果重排 FSRS 卡片的下次到期时间"""
     item_id = judge_result.get("item_id")
@@ -326,11 +333,8 @@ async def apply_fsrs_reschedule(db, user_id: int, judge_result: dict) -> None:
         scheduler = Scheduler()
         card = Card.from_dict(item.card_data)
         card, _ = scheduler.review_card(card, rating=int(rating))
-        due = card.due
-        if hasattr(due, "tzinfo") and due.tzinfo:
-            due = due.replace(tzinfo=None)
         item.card_data = card.to_dict()
-        item.due = due
+        item.due = _naive_due(card.due)
     except Exception:
         logger.warning("FSRS 卡片重排失败 item=%s", item_id, exc_info=True)
 
@@ -352,15 +356,11 @@ async def create_review_card_once(db, user_id: int, concept: str) -> None:
         card = Card()
         card, _ = scheduler.review_card(card, rating=3)
 
-        due = card.due
-        if hasattr(due, "tzinfo") and due.tzinfo:
-            due = due.replace(tzinfo=None)
-
         db.add(ReviewItem(
             user_id=user_id,
             concept=concept,
             card_data=card.to_dict(),
-            due=due,
+            due=_naive_due(card.due),
         ))
     except Exception:
         logger.warning("复习卡片创建失败 concept=%s", concept, exc_info=True)
