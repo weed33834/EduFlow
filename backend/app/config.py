@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     LITELLM_BASE_URL: str = "https://api.openai.com/v1"
     LITELLM_MODEL: str = "gpt-4o-mini"
 
+    # 外部追踪（可选）：逗号分隔，如 "langfuse" 或 "langsmith"。
+    # 对应 SDK 需自行安装并配置其环境变量（如 LANGFUSE_PUBLIC_KEY）。
+    # 未安装 SDK 时 litellm 会在调用期报错——留空即完全关闭。
+    LITELLM_SUCCESS_CALLBACK: str = ""
+
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"
 

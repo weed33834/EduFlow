@@ -15,6 +15,23 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+def setup_external_callbacks() -> list[str]:
+    """按配置注册外部追踪提供方（Langfuse / LangSmith 等，经 litellm 原生回调）。
+
+    - LITELLM_SUCCESS_CALLBACK 为空（默认）→ 不注册任何回调，零开销
+    - 配置了名字但 SDK 未安装 → litellm 在调用期报错并记入失败日志，
+      不影响对话主流程；启动期只做格式校验
+    返回实际注册的回调名列表。
+    """
+    raw = (settings.LITELLM_SUCCESS_CALLBACK or "").strip()
+    if not raw:
+        return []
+    callbacks = [c.strip() for c in raw.split(",") if c.strip()]
+    litellm.success_callback = callbacks
+    logger.info("llm.external_callbacks enabled=%s", callbacks)
+    return callbacks
+
+
 async def chat_completion(
     messages: list[dict],
     system_prompt: str = "",
