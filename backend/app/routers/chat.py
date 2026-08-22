@@ -146,7 +146,11 @@ async def chat(
                 "action_plan": final_state.get("action_plan"),
             }
             if quiz_payload:
-                metadata["quiz"] = {**quiz_payload, "answered": False}
+                metadata["quiz"] = {
+                    **quiz_payload,
+                    "answered": False,
+                    "concept": req.message[:100],
+                }
             if code_payload:
                 metadata["code_result"] = code_payload
             if judge_result.get("mode"):
@@ -155,6 +159,14 @@ async def chat(
                     "correct": bool(judge_result.get("correct")),
                 }
                 judged_summary = dict(metadata["judged"])
+                judge_concept = (
+                    (pending_review or {}).get("concept")
+                    or (pending_quiz or {}).get("concept")
+                    or ""
+                )
+                await update_profile_on_judge(
+                    db2, user.id, bool(judge_result.get("correct")), judge_concept
+                )
             if review_item_id:
                 metadata["review_item_id"] = review_item_id
                 metadata["review_concept"] = next(
@@ -256,6 +268,26 @@ async def load_pending_context(db, session_id: int) -> tuple[dict, dict]:
             "message_id": last_msg.id,
         }
     return {}, {}
+
+
+async def update_profile_on_judge(db, user_id: int, correct: bool, concept: str) -> None:
+    """判题结果回写学生画像：掌握的概念进 strengths，薄弱概念进 weaknesses（各留最近 20 条）"""
+    if not concept:
+        return
+
+    result = await db.execute(
+        select(StudentProfile).where(StudentProfile.user_id == user_id)
+    )
+    profile = result.scalar_one_or_none()
+    if not profile:
+        return
+
+    field = "strengths" if correct else "weaknesses"
+    items = list(getattr(profile, field) or [])
+    if concept in items:
+        return
+    items.append(concept)
+    setattr(profile, field, items[-20:])
 
 
 async def apply_fsrs_reschedule(db, user_id: int, judge_result: dict) -> None:
