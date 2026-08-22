@@ -246,6 +246,8 @@ async def judge(state: AgentState) -> AgentState:
             "correct": correct,
             "rating": 3 if correct else 1,
             "item_id": pending_quiz.get("review_item_id"),
+            "selected": selected,
+            "answer": int(answer) if isinstance(answer, int) else None,
             "feedback": feedback,
         }}
 

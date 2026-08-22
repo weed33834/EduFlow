@@ -52,7 +52,9 @@ def test_chat_quiz_judging_loop(client, auth_headers):
 
     # 2. 用正确答案作答（降级题 answer=0 → A）
     complete2, events2 = _chat(client, auth_headers, "A", session_id=session_id)
-    assert complete2.get("judged") == {"mode": "quiz", "correct": True}
+    judged = complete2.get("judged") or {}
+    assert judged.get("mode") == "quiz" and judged.get("correct") is True
+    assert judged.get("selected") == 0 and judged.get("answer") == 0
     assert "回答正确" in complete2["content"]
 
     # 3. 会话历史里第一题被标记 answered，判题消息带 judged 元数据
@@ -67,9 +69,11 @@ def test_chat_quiz_judging_loop(client, auth_headers):
 def test_chat_wrong_answer_rated_again(client, auth_headers):
     complete, _ = _chat(client, auth_headers, "考考我")
     session_id = complete["session_id"]
-    wrong_letter = "BCD"[0]  # 降级题正确答案是 A(0)，B 必错
+    wrong_letter = "B"  # 降级题正确答案是 A(0)，B 必错
     complete2, _ = _chat(client, auth_headers, wrong_letter, session_id=session_id)
-    assert complete2.get("judged") == {"mode": "quiz", "correct": False}
+    judged = complete2.get("judged") or {}
+    assert judged.get("correct") is False
+    assert judged.get("selected") == 1 and judged.get("answer") == 0
     assert "回答错误" in complete2["content"]
 
 

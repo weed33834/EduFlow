@@ -11,6 +11,7 @@ import ThemeToggle from '@/components/ThemeToggle'
 import {
   chatStream, sessionAPI,
   type ChatResponseData, type SessionSummary, type CodeResult, type QuizData,
+  type JudgedSummary,
 } from '@/lib/api'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -21,6 +22,7 @@ interface ChatMsg {
   content: string
   quiz?: QuizData
   codeResult?: CodeResult
+  judged?: JudgedSummary
   timestamp: number
   error?: boolean
 }
@@ -77,13 +79,14 @@ export default function ChatPage() {
     try {
       const detail = await sessionAPI.get(id)
       setMessages(
-        detail.messages.map((m) => ({
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-          quiz: (m.metadata?.quiz ?? undefined) as QuizData | undefined,
-          codeResult: (m.metadata?.code_result ?? undefined) as CodeResult | undefined,
-          timestamp: new Date(m.created_at || '').getTime(),
-        })),
+      detail.messages.map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        quiz: (m.metadata?.quiz ?? undefined) as QuizData | undefined,
+        codeResult: (m.metadata?.code_result ?? undefined) as CodeResult | undefined,
+        judged: (m.metadata?.judged ?? undefined) as JudgedSummary | undefined,
+        timestamp: new Date(m.created_at || '').getTime(),
+      })),
       )
     } catch {
       setMessages([])
@@ -156,6 +159,7 @@ export default function ChatPage() {
                     content: data.content,
                     quiz: data.quiz,
                     codeResult: data.code_result,
+                    judged: data.judged,
                     timestamp: assistantTs,
                   }
                 : m,
@@ -539,7 +543,7 @@ function MessageBubble({
         )}
         {/* 题目卡片 */}
         {message.quiz && (
-          <QuizCard quiz={message.quiz} />
+          <QuizCard quiz={message.quiz} judged={message.judged} />
         )}
       </div>
     </div>
@@ -588,9 +592,13 @@ function CodeResultCard({ result }: { result: CodeResult }) {
 
 /* ─────────────────── 题目卡片 ─────────────────── */
 
-function QuizCard({ quiz }: { quiz: QuizData }) {
-  const [selected, setSelected] = useState<number | null>(null)
-  const [showResult, setShowResult] = useState(false)
+function QuizCard({ quiz, judged }: { quiz: QuizData; judged?: JudgedSummary }) {
+  // 已作答的题（历史回看或判题完成）：直接展示对错高亮，不可再点
+  const alreadyAnswered = Boolean(quiz.answered) || Boolean(judged)
+  const [selected, setSelected] = useState<number | null>(
+    alreadyAnswered ? (judged?.selected ?? null) : null,
+  )
+  const [showResult, setShowResult] = useState(alreadyAnswered)
 
   const handleSelect = (idx: number) => {
     if (showResult) return

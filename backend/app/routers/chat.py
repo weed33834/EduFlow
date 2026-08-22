@@ -180,11 +180,16 @@ async def chat(
             if code_payload:
                 metadata["code_result"] = code_payload
             if judge_result.get("mode"):
-                metadata["judged"] = {
+                judged_payload: dict = {
                     "mode": judge_result.get("mode"),
                     "correct": bool(judge_result.get("correct")),
                 }
-                judged_summary = dict(metadata["judged"])
+                if judge_result.get("mode") == "quiz":
+                    # 选择题带上所选与正确索引，前端回显对错高亮
+                    judged_payload["selected"] = judge_result.get("selected")
+                    judged_payload["answer"] = judge_result.get("answer")
+                metadata["judged"] = judged_payload
+                judged_summary = dict(judged_payload)
                 judge_concept = (
                     (pending_review or {}).get("concept")
                     or (pending_quiz or {}).get("concept")

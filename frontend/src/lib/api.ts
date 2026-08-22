@@ -54,6 +54,8 @@ export interface QuizData {
   answer: number
   explanation: string
   difficulty?: string
+  /** 历史消息里已作答的题带此标记（后端持久化） */
+  answered?: boolean
 }
 
 export interface CodeResult {
@@ -212,6 +214,9 @@ async function retryWithBackoff<T>(
 export interface JudgedSummary {
   mode: 'quiz' | 'review'
   correct: boolean
+  /** 仅 quiz 模式：学生所选与正确选项索引（用于回显对错高亮） */
+  selected?: number | null
+  answer?: number | null
 }
 
 export interface ChatResponseData {
