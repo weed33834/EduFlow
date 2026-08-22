@@ -7,6 +7,7 @@ import {
   LogOut, Menu, X, Brain, Terminal, Square, Copy, Check, RefreshCw,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import ThemeToggle from '@/components/ThemeToggle'
 import {
   chatStream, sessionAPI,
   type ChatResponseData, type SessionSummary, type CodeResult, type QuizData,
@@ -323,11 +324,14 @@ export default function ChatPage() {
               <div className="w-9 h-9 rounded-xl bg-brand-600 flex items-center justify-center shadow-sm">
                 <Brain className="w-5 h-5 text-white" />
               </div>
-              <div>
-                <h1 className="text-base font-bold text-gray-900">EduAgent</h1>
-                <p className="text-xs text-gray-400">AI 编程学习伙伴</p>
-              </div>
+            <div>
+              <h1 className="text-base font-bold text-gray-900">EduAgent</h1>
+              <p className="text-xs text-gray-400">AI 编程学习伙伴</p>
             </div>
+          </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
           </div>
         </header>
 
@@ -441,7 +445,7 @@ function MessageBubble({
   return (
     <div className={cn('flex items-start gap-2.5', isUser && 'flex-row-reverse')}>
       {isUser ? (
-        <div className="w-8 h-8 rounded-lg bg-gray-200 flex items-center justify-center flex-shrink-0 text-sm font-bold text-gray-500">
+        <div className="w-8 h-8 rounded-lg bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 text-sm font-bold text-gray-500 dark:text-gray-400">
           你
         </div>
       ) : (
@@ -451,7 +455,7 @@ function MessageBubble({
       )}
       <div
         className={cn(
-          'px-4 py-3 rounded-2xl max-w-[75%] animate-fade-in group',
+          'px-4 py-3 rounded-2xl max-w-[85%] sm:max-w-[75%] animate-fade-in group',
           isUser
             ? 'bg-brand-600 text-white rounded-tr-sm'
             : message.error

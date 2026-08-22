@@ -4,16 +4,42 @@
 
 :root {
   --brand: #2563eb;
+  /* 主题变量：浅色 */
+  --surface: #ffffff;
+  --surface-translucent: rgba(255, 255, 255, 0.8);
+  --surface-hover: #f9fafb;
+  --border: #e5e7eb;
+  --text-strong: #111827;
+  --text: #1f2937;
+  --text-muted: #6b7280;
+  --text-faint: #9ca3af;
+}
+
+.dark {
+  color-scheme: dark;
+  /* 主题变量：深色 */
+  --surface: #111827;
+  --surface-translucent: rgba(17, 24, 39, 0.82);
+  --surface-hover: #1f2937;
+  --border: #374151;
+  --text-strong: #f9fafb;
+  --text: #e5e7eb;
+  --text-muted: #9ca3af;
+  --text-faint: #6b7280;
 }
 
 body {
-  @apply bg-gray-50 text-gray-900 antialiased;
+  background-color: var(--surface-hover);
+  color: var(--text);
+  @apply antialiased;
 }
 
-/* ── 组件类 ──────────────────────────────── */
+/* ── 组件类（随主题变量换肤） ──────────────────────────────── */
 
 .glass-card {
-  @apply bg-white/80 backdrop-blur-sm border border-gray-200 rounded-2xl shadow-sm;
+  background-color: var(--surface-translucent);
+  border: 1px solid var(--border);
+  @apply backdrop-blur-sm rounded-2xl shadow-sm;
 }
 
 .btn-primary {
@@ -21,19 +47,56 @@ body {
 }
 
 .btn-secondary {
-  @apply inline-flex items-center justify-center gap-2 bg-white text-gray-700 font-medium px-4 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors disabled:opacity-60;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  @apply inline-flex items-center justify-center gap-2 font-medium px-4 py-2.5 rounded-xl transition-colors disabled:opacity-60;
+}
+
+.btn-secondary:hover {
+  background-color: var(--surface-hover);
 }
 
 .input-field {
-  @apply w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-strong);
+  @apply w-full px-4 py-2.5 rounded-xl placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all dark:placeholder-gray-500;
 }
 
 .label {
-  @apply block text-sm font-medium text-gray-600 mb-1.5;
+  color: var(--text-muted);
+  @apply block text-sm font-medium mb-1.5;
 }
 
 .progress-track {
-  @apply w-full h-2 bg-gray-100 rounded-full overflow-hidden;
+  @apply w-full h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden;
+}
+
+/* ── 散落工具类的主题映射（.dark 下重定义常用灰阶） ─────────── */
+
+.dark .text-gray-900 { color: var(--text-strong); }
+.dark .text-gray-900\/90 { color: var(--text-strong); }
+.dark .text-gray-800 { color: var(--text); }
+.dark .text-gray-700 { color: var(--text); }
+.dark .text-gray-600 { color: var(--text-muted); }
+.dark .text-gray-500 { color: var(--text-muted); }
+.dark .text-gray-400 { color: var(--text-faint); }
+.dark .text-gray-300 { color: var(--text-faint); }
+
+.dark .bg-white { background-color: var(--surface); }
+.dark .bg-gray-50 { background-color: var(--surface-hover); }
+.dark .bg-gray-100 { background-color: var(--surface-hover); }
+.dark .bg-gray-200 { background-color: #374151; }
+.dark .hover\:bg-gray-50:hover,
+.dark .hover\:bg-gray-100:hover { background-color: var(--surface-hover); }
+
+.dark .border-gray-100,
+.dark .border-gray-200 { border-color: var(--border); }
+
+/* 气泡内代码块保持深底亮字（两种主题下都可读） */
+pre, code {
+  color-scheme: light dark;
 }
 
 /* ── 动画 ──────────────────────────────── */
@@ -56,8 +119,9 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 rounded-full;
+  background-color: var(--border);
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-gray-400;
+  background-color: var(--text-faint);
 }
