@@ -97,7 +97,7 @@ npm run dev
 ## Agent 状态机
 
 ```
-understand → recall → plan → [teach | quiz | code | review | judge] → respond → reflect → END
+understand → recall → plan → [teach | quiz | code | review | judge | agent_loop] → respond → reflect → END（LLM 可用时生成型任务走 agent_loop 自主编排工具）
 ```
 
 | 节点 | 功能 |
@@ -189,7 +189,7 @@ pytest   # 全离线可跑（外部服务均 mock/降级）
 | v0.4.x | Agent 核心闭环：判题节点 + FSRS 按质重排 + 真增量流式 + PostgresSaver 持久化 + 知识库摄入 + 画像回写 + 限流 + 追踪日志 + 评估集 + 全量工程审计 | ✅ 已完成 |
 | v0.5.0 | 前端框架现代化：Next 16 + React 19（依赖漏洞 48→0），移除 legacy-peer-deps；外部追踪接入点、Redis 分布式限流、深色模式与移动端适配随 v0.4.x 落地 | ✅ 已完成 |
 | v0.6.0 | 对话管理大迭代：重新生成、编辑重发、会话置顶/归档/搜索；历史以 DB 为唯一事实源（移除 Checkpointer，多 worker 天然安全） | ✅ 已完成 |
-| v0.7.0 | 多 Agent 协作 / 工具自主规划 | 📋 计划 |
+| v0.7.0 | 工具自主规划：function-calling 主循环（跑代码/查知识库/查记忆/出题四工具自主编排），judge·FSRS 教学护栏保持固定 | ✅ 已完成 |
 
 ## 生产部署
 

@@ -264,6 +264,9 @@ def run_agent_stream(
                     "",
                 )
                 metadata["review_answered"] = False
+            tool_trace = final_state.get("tool_trace")
+            if tool_trace:
+                metadata["tool_trace"] = tool_trace
 
             db2.add(Message(
                 session_id=session.id,

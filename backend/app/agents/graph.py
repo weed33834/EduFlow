@@ -14,6 +14,7 @@ from app.agents.state import AgentState
 from app.agents.nodes import (
     understand, recall, plan, teach, quiz, code, review, judge, respond, reflect,
 )
+from app.agents.loop import agent_loop
 
 
 def build_agent_graph():
@@ -29,6 +30,7 @@ def build_agent_graph():
     graph.add_node("code", code)
     graph.add_node("review", review)
     graph.add_node("judge", judge)
+    graph.add_node("agent_loop", agent_loop)
     graph.add_node("respond", respond)
     graph.add_node("reflect", reflect)
 
@@ -52,15 +54,17 @@ def build_agent_graph():
         "code": "code",
         "review": "review",
         "judge": "judge",
+        "agent_loop": "agent_loop",
         "respond": "respond",
     })
 
-    # teach / quiz / code / review / judge → respond → reflect → END
+    # teach / quiz / code / review / judge / agent_loop → respond → reflect → END
     graph.add_edge("teach", "respond")
     graph.add_edge("quiz", "respond")
     graph.add_edge("code", "respond")
     graph.add_edge("review", "respond")
     graph.add_edge("judge", "respond")
+    graph.add_edge("agent_loop", "respond")
     graph.add_edge("respond", "reflect")
     graph.add_edge("reflect", END)
 

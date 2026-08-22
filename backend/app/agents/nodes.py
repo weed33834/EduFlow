@@ -205,13 +205,24 @@ async def plan(state: AgentState) -> AgentState:
     if review_items and intent not in ("practice", "run_code", "chitchat"):
         action = "review"
     else:
-        route = {
-            "learn_concept": "teach",
-            "practice": "quiz",
-            "run_code": "code",
-            "ask_question": "teach",  # 答疑也走 teach
-            "chitchat": "respond",
-        }
+        if settings.llm_available:
+            # v0.7.0 方案 A：LLM 可用时，生成型任务交给工具自主规划主循环
+            route = {
+                "learn_concept": "agent_loop",
+                "ask_question": "agent_loop",
+                "run_code": "agent_loop",
+                "practice": "quiz",
+                "chitchat": "respond",
+            }
+        else:
+            # 降级：保持固定路径（teach/code 有离线兜底文案）
+            route = {
+                "learn_concept": "teach",
+                "practice": "quiz",
+                "run_code": "code",
+                "ask_question": "teach",  # 答疑也走 teach
+                "chitchat": "respond",
+            }
         action = route.get(intent, "respond")
 
     return {**state, "action_plan": action}

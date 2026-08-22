@@ -26,6 +26,7 @@ class AgentState(TypedDict, total=False):
     pending_review: dict  # {"item_id": int, "concept": str}
     judge_result: dict  # {"mode": "quiz"|"review", "correct": bool, "rating": int, "item_id": int | None}
     review_item_id: int  # 本轮复习使用的卡片 id（供路由层持久化）
+    tool_trace: list[dict]  # v0.7.0 agent_loop 工具调用轨迹（观测用）
     knowledge_context: list[dict]  # Qdrant RAG 检索结果
     memory_context: list[dict]  # Mem0 长期记忆检索结果
     response_chunks: list[str]
