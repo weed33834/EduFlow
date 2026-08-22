@@ -10,6 +10,10 @@ os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_TEST_DB}"
 os.environ["JWT_SECRET"] = "test-secret-not-for-production"
 os.environ["LITELLM_API_KEY"] = ""
 os.environ["ENV"] = "dev"
+# 限流器是模块级单例且跨用例共享：全套件运行时注册/登录调用会超默认配额，
+# 测试环境放大限额；429 行为由 test_ratelimit 用独立小限额单独验证
+os.environ["RATE_LIMIT_CHAT_PER_MIN"] = "100000"
+os.environ["RATE_LIMIT_AUTH_PER_MIN"] = "100000"
 
 import pytest
 from fastapi.testclient import TestClient

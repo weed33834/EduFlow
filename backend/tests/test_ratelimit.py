@@ -173,7 +173,7 @@ def test_chat_endpoint_returns_429_when_limited(client, auth_headers):
     key = f"user:{user_id}"
 
     async def fill():
-        for _ in range(chat_router.settings.RATE_LIMIT_CHAT_PER_MIN):
+        for _ in range(chat_router.chat_limiter.max_events):
             await chat_router.chat_limiter.allow(key)
 
     asyncio.run(fill())
