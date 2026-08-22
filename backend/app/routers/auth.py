@@ -1,17 +1,35 @@
 """认证路由 — 保留 EduAgent 原有认证逻辑，改用 SQLAlchemy 2.0 Mapped"""
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.config import settings
 from app.database import get_db
 from app.models import User, StudentProfile
+from app.ratelimit import SlidingWindowLimiter
 from app.security import hash_password, verify_password, create_access_token
 from app.deps import get_current_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+# 每 IP 限流：默认 10 次/分钟（进程内计数）
+auth_limiter = SlidingWindowLimiter(
+    max_events=settings.RATE_LIMIT_AUTH_PER_MIN, window_seconds=60.0,
+)
+
+
+def _enforce_auth_rate_limit(request: Request) -> None:
+    ip = request.client.host if request.client else "unknown"
+    key = f"ip:{ip}"
+    if not auth_limiter.allow(key):
+        raise HTTPException(
+            status_code=429,
+            detail="请求过于频繁，请稍后再试",
+            headers={"Retry-After": str(int(auth_limiter.retry_after_seconds(key)) + 1)},
+        )
 
 
 # ── 请求/响应模型 ──────────────────────────────────────────
@@ -70,8 +88,9 @@ class UpdateUserRequest(BaseModel):
 # ── 路由 ──────────────────────────────────────────────────
 
 @router.post("/register", response_model=AuthResponse)
-async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(req: RegisterRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """注册"""
+    _enforce_auth_rate_limit(request)
     # 检查邮箱
     result = await db.execute(select(User).where(User.email == req.email.lower()))
     if result.scalar_one_or_none():
@@ -102,8 +121,9 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """登录"""
+    _enforce_auth_rate_limit(request)
     result = await db.execute(select(User).where(User.email == req.email.lower()))
     user = result.scalar_one_or_none()
 
