@@ -21,9 +21,9 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Wait for CI checks and merge
-        if: |
-          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
-          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        # 只自动合并 patch 级更新；minor/major 必须人工评审
+        # （后端已全量钉版 + 冷装 pytest，patch 撞坏 API 的概率低且有测试兜底）
+        if: steps.metadata.outputs.update-type == 'version-update:semver-patch'
         run: |
           sleep 15  # let CI workflows register their checks
           for i in $(seq 1 80); do

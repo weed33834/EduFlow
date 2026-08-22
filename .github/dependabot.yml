@@ -19,21 +19,16 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "lucide-react"
         update-types: ["version-update:semver-major"]
-  # 后端 pip 依赖
+  # 后端 pip 依赖（全量精确钉版，只允许 patch 级自动合并；
+  # minor/major 一律人工评审——冷装 pytest 会验证 API 兼容性）
   - package-ecosystem: "pip"
     directory: "/backend"
     schedule: { interval: "weekly" }
     labels: ["dependencies", "backend"]
     auto-merge: true
     ignore:
-      - dependency-name: "langgraph"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "litellm"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "sqlalchemy"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "fastapi"
-        update-types: ["version-update:semver-major"]
+      - dependency-name: "*"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"

@@ -19,6 +19,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         working-directory: ./frontend
         run: npm install --legacy-peer-deps
@@ -29,16 +31,27 @@ jobs:
           NEXT_TELEMETRY_DISABLED: 1
 
   backend:
-    name: Backend (Python compile check)
+    name: Backend (cold install + pytest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - name: Install dependencies
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      # 冷装验证：按 requirements.txt 从零安装（钉版漂移/API 断裂在这里暴露）
+      - name: Cold install dependencies
         working-directory: ./backend
-        run: pip install -r requirements.txt
-      - name: Compile check
+        run: |
+          python -m venv .venv-ci
+          .venv-ci/bin/pip install --no-cache-dir -r requirements.txt
+      - name: Run tests (offline, degraded mode)
         working-directory: ./backend
-        run: python -m compileall -q app/
+        run: |
+          .venv-ci/bin/python -m pytest -q
+        env:
+          DATABASE_URL: "sqlite+aiosqlite:///./ci_test.db"
+          JWT_SECRET: "ci-secret-not-for-production"
+          LITELLM_API_KEY: ""
+          ENV: "dev"
