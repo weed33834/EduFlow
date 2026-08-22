@@ -23,6 +23,7 @@ class MessageResponse(BaseModel):
     id: int
     role: str
     content: str
+    metadata: dict | None = None
     created_at: str | None
 
 
@@ -101,6 +102,7 @@ async def get_session(
                 id=m.id,
                 role=m.role,
                 content=m.content,
+                metadata=m.metadata_ if m.metadata_ else None,
                 created_at=m.created_at.isoformat() if m.created_at else None,
             )
             for m in messages

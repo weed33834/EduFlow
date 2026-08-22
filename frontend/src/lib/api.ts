@@ -38,6 +38,7 @@ export interface Message {
   id: number
   role: string
   content: string
+  metadata?: Record<string, unknown> | null
   created_at: string | null
 }
 

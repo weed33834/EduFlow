@@ -69,6 +69,8 @@ export default function ChatPage() {
         detail.messages.map((m) => ({
           role: m.role as 'user' | 'assistant',
           content: m.content,
+          quiz: (m.metadata?.quiz ?? undefined) as QuizData | undefined,
+          codeResult: (m.metadata?.code_result ?? undefined) as CodeResult | undefined,
           timestamp: new Date(m.created_at || '').getTime(),
         })),
       )

@@ -131,9 +131,9 @@ async def teach(state: AgentState) -> AgentState:
     level = profile.get("current_level", "beginner")
     history = state.get("history", [])
 
-    # 构造带历史的消息
+    # 构造带历史的消息（排除当前消息，由 understand 节点加入）
     messages: list[dict] = []
-    for h in history[-6:]:  # 最近 3 轮
+    for h in history[:-1][-6:]:  # 最近 3 轮，排除当前用户消息
         if h.get("role") and h.get("content"):
             messages.append({"role": h["role"], "content": str(h["content"])})
 
@@ -255,7 +255,7 @@ async def respond(state: AgentState) -> AgentState:
         message = state["user_message"]
         history = state.get("history", [])
         messages: list[dict] = []
-        for h in history[-6:]:
+        for h in history[:-1][-6:]:
             if h.get("role") and h.get("content"):
                 messages.append({"role": h["role"], "content": str(h["content"])})
         messages.append({"role": "user", "content": message})
