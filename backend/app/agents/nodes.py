@@ -103,9 +103,10 @@ _ANSWER_LETTER_BARE_RE = re.compile(r"^\s*([A-Da-d])\s*[.。!！]?\s*$")
 def keyword_intent(message: str) -> str:
     """降级意图分类：关键词匹配（无 LLM 时使用，也是评估集的基线）"""
     msg = message.lower()
-    if any(k in msg for k in ["def ", "print(", "import ", "class ", "console.log"]):
+    if any(k in msg for k in ["def ", "print(", "import ", "class ", "console.log",
+                              "运行这段代码", "帮我运行", "跑一下"]):
         return "run_code"
-    if any(k in msg for k in ["什么是", "解释", "讲解", "原理", "怎么理解"]):
+    if any(k in msg for k in ["什么是", "解释", "讲解", "讲讲", "原理", "怎么理解"]):
         return "learn_concept"
     if any(k in msg for k in ["出题", "练习", "题目", "考考", "quiz", "题"]):
         return "practice"
