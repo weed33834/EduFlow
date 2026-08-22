@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   Send, Sparkles, Loader2, Plus, Trash2, MessageSquare,
   LogOut, Menu, X, Brain, Terminal, Square, Copy, Check, RefreshCw, Pencil,
-  ArrowDown,
+  ArrowDown, Download,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -263,6 +263,27 @@ export default function ChatPage() {
     router.push('/')
   }
 
+  const exportMarkdown = useCallback(() => {
+    if (messages.length === 0) return
+    const title = sessions.find((s) => s.id === activeSessionId)?.title || 'EduAgent 对话'
+    const lines: string[] = [`# ${title}`, '']
+    for (const m of messages) {
+      const who = m.role === 'user' ? '🙋 我' : '🤖 EduAgent'
+      lines.push(`### ${who}`)
+      lines.push('')
+      lines.push(m.content)
+      lines.push('')
+    }
+    lines.push('---', `*导出于 ${new Date().toLocaleString('zh-CN')} · EduAgent*`)
+    const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${title.replace(/[\\/:*?"<>|]/g, '_').slice(0, 40)}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [messages, sessions, activeSessionId])
+
   const showQuickQuestions = messages.length === 0
 
   return (
@@ -410,6 +431,15 @@ export default function ChatPage() {
           </div>
           </div>
           <div className="flex items-center gap-1">
+            {activeSessionId && messages.length > 0 && (
+              <button
+                onClick={exportMarkdown}
+                className="p-2.5 rounded-lg text-gray-500 hover:text-brand-600 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
+                title="导出为 Markdown"
+              >
+                <Download className="w-4 h-4" />
+              </button>
+            )}
             <ThemeToggle />
           </div>
         </header>
