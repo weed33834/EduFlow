@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   Send, Sparkles, Loader2, Plus, Trash2, MessageSquare,
   LogOut, Menu, X, Brain, Terminal, Square, Copy, Check, RefreshCw, Pencil,
+  ArrowDown,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -44,6 +45,24 @@ export default function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const followRef = useRef(true) // 用户上滑阅读时暂停自动跟随
+
+  const [showScrollBtn, setShowScrollBtn] = useState(false)
+
+  const scrollToBottom = useCallback((smooth = true) => {
+    const el = scrollRef.current
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+    followRef.current = true
+    setShowScrollBtn(false)
+  }, [])
+
+  const handleThreadScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+    followRef.current = nearBottom
+    setShowScrollBtn(!nearBottom)
+  }, [])
 
   // 加载会话列表
   const loadSessions = useCallback(async () => {
@@ -61,10 +80,11 @@ export default function ChatPage() {
     loadSessions()
   }, [loadSessions])
 
-  // 自动滚动
+  // 自动滚动：仅当用户本来就在底部（未上滑阅读历史）时跟随
   useEffect(() => {
+    if (!followRef.current) return
     const el = scrollRef.current
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    if (el) el.scrollTo({ top: el.scrollHeight })
   }, [messages, sending])
 
   // textarea 自动增高
@@ -367,7 +387,7 @@ export default function ChatPage() {
       )}
 
       {/* 主区域 */}
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 relative">
         <header
           className="sticky top-0 z-30 flex items-center justify-between px-4 py-3 border-b flex-shrink-0 backdrop-blur-xl"
           style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-translucent)' }}
@@ -395,7 +415,11 @@ export default function ChatPage() {
         </header>
 
         {/* 消息区域 */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        <div
+          ref={scrollRef}
+          onScroll={handleThreadScroll}
+          className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
+        >
           {showQuickQuestions ? (
             <div className="h-full flex flex-col items-center justify-center px-4">
               <div className="relative mb-5">
@@ -437,16 +461,33 @@ export default function ChatPage() {
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-600 to-indigo-600 shadow-sm flex items-center justify-center flex-shrink-0">
                 <Brain className="w-4 h-4 text-white" />
               </div>
-              <div className="glass-card px-4 py-3 flex items-center gap-2">
-                <Loader2 className="w-4 h-4 text-brand-500 animate-spin" />
-                <span className="text-sm text-gray-400">Agent 正在思考...</span>
+              <div className="glass-card px-4 py-3.5 flex items-center gap-1.5">
+                <span className="typing-dot" />
+                <span className="typing-dot" />
+                <span className="typing-dot" />
               </div>
             </div>
           )}
         </div>
 
+        {/* 滚动到底部 */}
+        {showScrollBtn && (
+          <button
+            onClick={() => scrollToBottom()}
+            className="absolute bottom-28 left-1/2 -translate-x-1/2 z-20 p-2.5 rounded-full shadow-lg border transition-all hover:scale-105"
+            style={{
+              backgroundColor: 'var(--surface)',
+              borderColor: 'var(--border-strong)',
+              color: 'var(--text-muted)',
+            }}
+            title="滚动到底部"
+          >
+            <ArrowDown className="w-4 h-4" />
+          </button>
+        )}
+
         {/* 输入区域 */}
-        <div className="flex-shrink-0 px-4 pt-3 pb-4 border-t border-gray-100">
+        <div className="flex-shrink-0 px-4 pt-3 pb-4" style={{ borderTop: '1px solid var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="flex items-end gap-2 max-w-4xl mx-auto glass-card !rounded-2xl p-2 shadow-md">
             <textarea
               ref={inputRef}
@@ -525,11 +566,25 @@ function MessageBubble({
             ? 'glass-card text-red-600 rounded-tl-sm'
             : 'glass-card text-gray-700 rounded-tl-sm',
         )}
+        title={new Date(message.timestamp).toLocaleString('zh-CN')}
       >
         {isUser ? (
-          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-            {message.content}
-          </p>
+          <>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+              {message.content}
+            </p>
+            <button
+              onClick={handleCopy}
+              className="mt-1.5 ml-auto flex items-center gap-1 text-[11px] text-white/60 hover:text-white transition-colors opacity-0 group-hover:opacity-100"
+              title="复制"
+            >
+              {copied ? (
+                <><Check className="w-3 h-3" /> 已复制</>
+              ) : (
+                <><Copy className="w-3 h-3" /> 复制</>
+              )}
+            </button>
+          </>
         ) : message.error ? (
           <div className="flex items-center gap-2">
             <p className="text-sm leading-relaxed">{message.content}</p>
@@ -555,23 +610,29 @@ function MessageBubble({
                   const isInline = !className && !String(children).includes('\n')
                   if (isInline) {
                     return (
-                      <code className="bg-gray-100 text-pink-600 px-1.5 py-0.5 rounded text-xs font-mono" {...props}>
+                      <code className="bg-gray-100 dark:bg-slate-800 text-pink-600 dark:text-pink-400 px-1.5 py-0.5 rounded text-xs font-mono" {...props}>
                         {children}
                       </code>
                     )
                   }
                   const codeText = String(children).replace(/\n$/, '')
+                  const lang =
+                    /language-([\w+-]+)/.exec(className || '')?.[1] || '代码'
                   return (
-                    <div className="relative group/code my-2">
-                      <pre className="bg-gray-900 text-green-400 p-3 rounded-lg text-xs font-mono overflow-x-auto">
-                        <code className={className}>{children}</code>
+                    <div className="my-2 rounded-lg overflow-hidden border border-gray-700/60">
+                      <div className="flex items-center justify-between bg-gray-800 px-3 py-1.5">
+                        <span className="text-[11px] font-mono text-gray-400">{lang}</span>
+                        <button
+                          onClick={() => navigator.clipboard.writeText(codeText)}
+                          className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-white transition-colors"
+                          title="复制代码"
+                        >
+                          <Copy className="w-3 h-3" /> 复制
+                        </button>
+                      </div>
+                      <pre className="bg-gray-900 text-green-400 p-3 text-xs font-mono overflow-x-auto">
+                        <code>{children}</code>
                       </pre>
-                      <button
-                        onClick={() => navigator.clipboard.writeText(codeText)}
-                        className="absolute top-2 right-2 opacity-0 group-hover/code:opacity-100 text-gray-400 hover:text-white transition-all text-xs px-2 py-1 bg-gray-800 rounded"
-                      >
-                        复制
-                      </button>
                     </div>
                   )
                 },
