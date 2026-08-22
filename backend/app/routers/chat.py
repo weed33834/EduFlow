@@ -26,14 +26,14 @@ from app.deps import get_current_user
 from app.models import User, Session, Message, StudentProfile, ReviewItem
 from app.agents import graph as graph_module
 from app.config import settings
-from app.ratelimit import SlidingWindowLimiter
+from app.ratelimit import SlidingWindowLimiter, build_limiter
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
-# 每用户限流：默认 20 次/分钟（进程内计数）
-chat_limiter = SlidingWindowLimiter(
+# 每用户限流：默认 20 次/分钟（REDIS_URL 配置时为跨 worker 分布式计数）
+chat_limiter = build_limiter(
     max_events=settings.RATE_LIMIT_CHAT_PER_MIN, window_seconds=60.0,
 )
 
@@ -58,11 +58,12 @@ async def chat(
     对话历史由 LangGraph Checkpointer 管理；LLM 输出通过 custom stream 实时增量推送。
     """
     # 限流（按用户）
-    if not chat_limiter.allow(f"user:{user.id}"):
+    if not await chat_limiter.allow(f"user:{user.id}"):
+        retry_after = await chat_limiter.retry_after_seconds(f"user:{user.id}")
         raise HTTPException(
             status_code=429,
             detail="请求过于频繁，请稍后再试",
-            headers={"Retry-After": str(int(chat_limiter.retry_after_seconds(f"user:{user.id}")) + 1)},
+            headers={"Retry-After": str(int(retry_after) + 1)},
         )
 
     # 获取或创建会话

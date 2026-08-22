@@ -27,9 +27,10 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"
 
-    # 限流（进程内滑动窗口）
+    # 限流（滑动窗口；配 REDIS_URL 用分布式实现，留空用进程内实现）
     RATE_LIMIT_CHAT_PER_MIN: int = 20
     RATE_LIMIT_AUTH_PER_MIN: int = 10
+    REDIS_URL: str = ""
 
     # E2B 代码沙箱（开源 — pip install e2b）
     E2B_API_KEY: str = ""

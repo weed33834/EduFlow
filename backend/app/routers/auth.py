@@ -9,26 +9,27 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import get_db
 from app.models import User, StudentProfile
-from app.ratelimit import SlidingWindowLimiter
+from app.ratelimit import build_limiter
 from app.security import hash_password, verify_password, create_access_token
 from app.deps import get_current_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-# 每 IP 限流：默认 10 次/分钟（进程内计数）
-auth_limiter = SlidingWindowLimiter(
+# 每 IP 限流：默认 10 次/分钟（REDIS_URL 配置时为跨 worker 分布式计数）
+auth_limiter = build_limiter(
     max_events=settings.RATE_LIMIT_AUTH_PER_MIN, window_seconds=60.0,
 )
 
 
-def _enforce_auth_rate_limit(request: Request) -> None:
+async def _enforce_auth_rate_limit(request: Request) -> None:
     ip = request.client.host if request.client else "unknown"
     key = f"ip:{ip}"
-    if not auth_limiter.allow(key):
+    if not await auth_limiter.allow(key):
+        retry_after = await auth_limiter.retry_after_seconds(key)
         raise HTTPException(
             status_code=429,
             detail="请求过于频繁，请稍后再试",
-            headers={"Retry-After": str(int(auth_limiter.retry_after_seconds(key)) + 1)},
+            headers={"Retry-After": str(int(retry_after) + 1)},
         )
 
 
@@ -90,7 +91,7 @@ class UpdateUserRequest(BaseModel):
 @router.post("/register", response_model=AuthResponse)
 async def register(req: RegisterRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """注册"""
-    _enforce_auth_rate_limit(request)
+    await _enforce_auth_rate_limit(request)
     # 检查邮箱
     result = await db.execute(select(User).where(User.email == req.email.lower()))
     if result.scalar_one_or_none():
@@ -123,7 +124,7 @@ async def register(req: RegisterRequest, request: Request, db: AsyncSession = De
 @router.post("/login", response_model=AuthResponse)
 async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """登录"""
-    _enforce_auth_rate_limit(request)
+    await _enforce_auth_rate_limit(request)
     result = await db.execute(select(User).where(User.email == req.email.lower()))
     user = result.scalar_one_or_none()
 
