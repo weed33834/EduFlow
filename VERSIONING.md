@@ -38,5 +38,9 @@
 
 ## 大迭代记录
 
+- **v0.6.0**：对话管理大迭代（重新生成/编辑重发/置顶归档）+ 架构简化：
+  对话历史改以 Message 表为唯一事实源，移除 LangGraph Checkpointer 与
+  langgraph-checkpoint-postgres 依赖，多 worker 天然安全
+
 - **v0.4.0**：Agent 核心交互闭环（judge 节点 + 真流式 + 持久化 checkpointer）
 - **v0.5.0**：前端框架现代化（Next 15/16 + React 19 + 类型链升级）

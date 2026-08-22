@@ -5,12 +5,12 @@ import { useRouter } from 'next/navigation'
 import {
   Send, Sparkles, Loader2, Plus, Trash2, MessageSquare,
   LogOut, Menu, X, Brain, Terminal, Square, Copy, Check, RefreshCw, Pencil,
-  ArrowDown, Download,
+  ArrowDown, Download, Star, Archive, ArchiveRestore,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import ThemeToggle from '@/components/ThemeToggle'
 import {
-  chatStream, sessionAPI,
+  chatStream, regenerateStream, editResendStream, sessionAPI,
   type ChatResponseData, type SessionSummary, type CodeResult, type QuizData,
   type JudgedSummary,
 } from '@/lib/api'
@@ -19,6 +19,7 @@ import remarkGfm from 'remark-gfm'
 import { cn, formatDateTime } from '@/lib/utils'
 
 interface ChatMsg {
+  id?: number
   role: 'user' | 'assistant'
   content: string
   quiz?: QuizData
@@ -41,6 +42,10 @@ export default function ChatPage() {
   const [loadingSessions, setLoadingSessions] = useState(true)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editValue, setEditValue] = useState('')
+  const [sidebarTab, setSidebarTab] = useState<'all' | 'archived'>('all')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [editingMsgIdx, setEditingMsgIdx] = useState<number | null>(null)
+  const [editDraft, setEditDraft] = useState('')
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -64,17 +69,17 @@ export default function ChatPage() {
     setShowScrollBtn(!nearBottom)
   }, [])
 
-  // 加载会话列表
+  // 加载会话列表（按当前标签：全部 / 归档）
   const loadSessions = useCallback(async () => {
     try {
-      const list = await sessionAPI.list()
+      const list = await sessionAPI.list(sidebarTab === 'archived')
       setSessions(list)
     } catch {
       setSessions([])
     } finally {
       setLoadingSessions(false)
     }
-  }, [])
+  }, [sidebarTab])
 
   useEffect(() => {
     loadSessions()
@@ -249,7 +254,7 @@ export default function ChatPage() {
     const title = editValue.trim()
     if (!title) return
     try {
-      await sessionAPI.rename(id, title)
+      await sessionAPI.update(id, { summary: title })
       setSessions((prev) =>
         prev.map((s) => (s.id === id ? { ...s, title } : s)),
       )
@@ -257,6 +262,161 @@ export default function ChatPage() {
       /* best effort */
     }
   }, [editingId, editValue])
+
+  // 用服务端数据刷新当前会话消息（拿回 DB id 与最新状态）
+  const refreshThread = useCallback(async (sid: number) => {
+    try {
+      const detail = await sessionAPI.get(sid)
+      setMessages(
+        detail.messages.map((m) => ({
+          id: m.id,
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+          quiz: (m.metadata?.quiz ?? undefined) as QuizData | undefined,
+          codeResult: (m.metadata?.code_result ?? undefined) as CodeResult | undefined,
+          judged: (m.metadata?.judged ?? undefined) as JudgedSummary | undefined,
+          timestamp: new Date(m.created_at || '').getTime(),
+        })),
+      )
+    } catch {
+      /* best effort */
+    }
+  }, [])
+
+  // v0.6.0 重新生成最后一轮回复
+  const handleRegenerate = useCallback(async () => {
+    if (!activeSessionId || sending) return
+    setSending(true)
+    setInput('')
+    const assistantTs = Date.now()
+    // 移除本地最后一条助手消息，等待流式重写
+    setMessages((prev) => {
+      const arr = [...prev]
+      while (arr.length && arr[arr.length - 1].role === 'assistant') arr.pop()
+      return [...arr, { role: 'assistant', content: '', timestamp: assistantTs }]
+    })
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    await regenerateStream(
+      activeSessionId,
+      (data) => {
+        if (data.type === 'stream') {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.timestamp === assistantTs ? { ...m, content: m.content + data.content } : m,
+            ),
+          )
+        } else if (data.type === 'complete') {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.timestamp === assistantTs
+                ? {
+                    ...m,
+                    content: data.content,
+                    quiz: data.quiz,
+                    codeResult: data.code_result,
+                    judged: data.judged,
+                  }
+                : m,
+            ),
+          )
+        }
+      },
+      (err) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.timestamp === assistantTs
+              ? { ...m, content: err.message, error: true }
+              : m,
+          ),
+        )
+      },
+      controller.signal,
+    )
+    abortRef.current = null
+    if (activeSessionId) await refreshThread(activeSessionId)
+    setSending(false)
+  }, [activeSessionId, sending, refreshThread])
+
+  // v0.6.0 编辑用户消息并重发
+  const startEditMessage = useCallback((idx: number) => {
+    setEditingMsgIdx(idx)
+    setEditDraft(messages[idx]?.content ?? '')
+  }, [messages])
+
+  const commitEditMessage = useCallback(async () => {
+    const idx = editingMsgIdx
+    setEditingMsgIdx(null)
+    if (idx == null || !activeSessionId || sending) return
+    const target = messages[idx]
+    if (!target?.id) return
+    const draft = editDraft.trim()
+    if (!draft || draft === target.content) return
+
+    setSending(true)
+    // 本地立即呈现：截断其后并替换文本，等待重跑结果
+    setMessages((prev) => [
+      ...prev.slice(0, idx),
+      { ...target, content: draft },
+      { role: 'assistant' as const, content: '', timestamp: Date.now() },
+    ])
+
+    await editResendStream(
+      activeSessionId, target.id, draft,
+      (data) => {
+        if (data.type === 'stream') {
+          setMessages((prev) =>
+            prev.map((m, i) =>
+              i === prev.length - 1 && m.role === 'assistant'
+                ? { ...m, content: m.content + data.content }
+                : m,
+            ),
+          )
+        } else if (data.type === 'complete') {
+          setMessages((prev) =>
+            prev.map((m, i) =>
+              i === prev.length - 1 && m.role === 'assistant'
+                ? { ...m, content: data.content, quiz: data.quiz,
+                    codeResult: data.code_result, judged: data.judged }
+                : m,
+            ),
+          )
+        }
+      },
+      (err) => {
+        setMessages((prev) =>
+          prev.map((m, i) =>
+            i === prev.length - 1 && m.role === 'assistant'
+              ? { ...m, content: err.message, error: true }
+              : m,
+          ),
+        )
+      },
+    )
+    if (activeSessionId) await refreshThread(activeSessionId)
+    setSending(false)
+  }, [editingMsgIdx, messages, activeSessionId, sending, editDraft, refreshThread])
+
+  // 置顶 / 归档切换
+  const togglePin = useCallback(async (s: SessionSummary, e: React.SyntheticEvent) => {
+    e.stopPropagation()
+    try {
+      const next = !s.pinned
+      await sessionAPI.update(s.id, { pinned: next })
+      setSessions((prev) => prev.map((x) => (x.id === s.id ? { ...x, pinned: next } : x)))
+    } catch { /* best effort */ }
+  }, [])
+
+  const toggleArchive = useCallback(async (s: SessionSummary, e: React.SyntheticEvent) => {
+    e.stopPropagation()
+    try {
+      const next = !s.archived
+      await sessionAPI.update(s.id, { archived: next })
+      setSessions((prev) => prev.filter((x) => x.id !== s.id))
+      if (activeSessionId === s.id) handleNewChat()
+    } catch { /* best effort */ }
+  }, [activeSessionId, handleNewChat])
 
   const handleLogout = () => {
     logout()
@@ -305,13 +465,42 @@ export default function ChatPage() {
           </button>
         </div>
 
-        <div className="p-3">
+        <div className="p-3 space-y-2">
           <button
             onClick={handleNewChat}
             className="btn-primary w-full !py-2 text-sm"
           >
             <Plus className="w-4 h-4" /> 新对话
           </button>
+
+          {/* 全部 / 归档 标签 */}
+          <div
+            className="flex gap-1 p-1 rounded-xl text-xs"
+            style={{ backgroundColor: 'var(--surface-sunken)' }}
+          >
+            {([['all', '全部'], ['archived', '归档']] as const).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setSidebarTab(key)}
+                className={cn(
+                  'flex-1 py-1.5 rounded-lg font-medium transition-all',
+                  sidebarTab === key
+                    ? 'bg-white shadow-sm text-brand-600 dark:bg-slate-700 dark:text-brand-300'
+                    : 'text-gray-500 hover:text-gray-700',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* 搜索 */}
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="搜索对话..."
+            className="input-field !py-2 !text-xs"
+          />
         </div>
 
         <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-1">
@@ -320,10 +509,19 @@ export default function ChatPage() {
           ) : sessions.length === 0 ? (
             <div className="text-center py-8 text-sm text-gray-400">
               <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-30" />
-              还没有对话
+              {sidebarTab === 'archived' ? '暂无归档对话' : '还没有对话'}
             </div>
           ) : (
-            sessions.map((s) => (
+            sessions
+              .filter((s) => {
+                const q = searchQuery.trim().toLowerCase()
+                if (!q) return true
+                return (
+                  (s.title || '').toLowerCase().includes(q) ||
+                  (s.last_message || '').toLowerCase().includes(q)
+                )
+              })
+              .map((s) => (
               editingId === s.id ? (
                 <div key={s.id} className="px-1 py-1">
                   <input
@@ -352,8 +550,13 @@ export default function ChatPage() {
               )}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium truncate flex-1">
-                  {s.title || s.last_message || `对话 #${s.id}`}
+                <span className="text-sm font-medium truncate flex-1 flex items-center gap-1">
+                  {s.pinned && (
+                    <Star className="w-3 h-3 text-amber-400 fill-amber-400 flex-shrink-0" />
+                  )}
+                  <span className="truncate">
+                    {s.title || s.last_message || `对话 #${s.id}`}
+                  </span>
                 </span>
                 <span
                   role="button"
@@ -365,6 +568,44 @@ export default function ChatPage() {
                 >
                   <Pencil className="w-3.5 h-3.5" />
                 </span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => togglePin(s, e)}
+                  onKeyDown={(e) => e.key === 'Enter' && togglePin(s, e)}
+                  className={cn(
+                    'transition-opacity cursor-pointer flex-shrink-0',
+                    s.pinned
+                      ? 'text-amber-400'
+                      : 'opacity-0 group-hover:opacity-100 text-gray-300 hover:text-amber-400',
+                  )}
+                  title={s.pinned ? '取消置顶' : '置顶'}
+                >
+                  <Star className="w-3.5 h-3.5" />
+                </span>
+                {sidebarTab === 'archived' ? (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => toggleArchive(s, e)}
+                    onKeyDown={(e) => e.key === 'Enter' && toggleArchive(s, e)}
+                    className="opacity-70 hover:opacity-100 text-gray-400 hover:text-brand-600 transition-all cursor-pointer flex-shrink-0"
+                    title="取消归档"
+                  >
+                    <ArchiveRestore className="w-3.5 h-3.5" />
+                  </span>
+                ) : (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => toggleArchive(s, e)}
+                    onKeyDown={(e) => e.key === 'Enter' && toggleArchive(s, e)}
+                    className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-slate-500 transition-all cursor-pointer flex-shrink-0"
+                    title="归档"
+                  >
+                    <Archive className="w-3.5 h-3.5" />
+                  </span>
+                )}
                 <Trash2
                   onClick={(e) => handleDeleteSession(s.id, e)}
                   className="w-3.5 h-3.5 text-gray-300 group-hover:text-red-400 flex-shrink-0 transition-colors"
@@ -476,10 +717,26 @@ export default function ChatPage() {
             </div>
           ) : (
             messages.map((msg, i) => (
-              msg.content || msg.role === 'user' ? (
+              msg.content || msg.role === 'user' || editingMsgIdx === i ? (
                 <MessageBubble
                   key={i}
+                  index={i}
                   message={msg}
+                  isLastAssistant={
+                    i === messages.length - 1 ||
+                    messages.slice(i + 1).every((m) => m.role !== 'assistant')
+                      ? msg.role === 'assistant'
+                      : false
+                  }
+                  sending={sending}
+                  hasSession={!!activeSessionId}
+                  isEditing={editingMsgIdx === i}
+                  editDraft={editDraft}
+                  onEditChange={setEditDraft}
+                  onEditSave={commitEditMessage}
+                  onEditCancel={() => setEditingMsgIdx(null)}
+                  onStartEdit={() => startEditMessage(i)}
+                  onRegenerate={!sending && !!activeSessionId ? handleRegenerate : undefined}
                   onRetry={msg.error ? () => sendMessage(msg.content, msg.timestamp - 1) : undefined}
                 />
               ) : null
@@ -562,9 +819,31 @@ export default function ChatPage() {
 
 function MessageBubble({
   message,
+  index,
+  isLastAssistant,
+  sending,
+  hasSession,
+  isEditing,
+  editDraft,
+  onEditChange,
+  onEditSave,
+  onEditCancel,
+  onStartEdit,
+  onRegenerate,
   onRetry,
 }: {
   message: ChatMsg
+  index: number
+  isLastAssistant: boolean
+  sending: boolean
+  hasSession: boolean
+  isEditing: boolean
+  editDraft: string
+  onEditChange: (v: string) => void
+  onEditSave: () => void
+  onEditCancel: () => void
+  onStartEdit: () => void
+  onRegenerate?: () => void
   onRetry?: () => void
 }) {
   const isUser = message.role === 'user'
@@ -575,6 +854,8 @@ function MessageBubble({
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
+
+  const canEdit = isUser && !!message.id && hasSession && !sending
 
   return (
     <div className={cn('flex items-start gap-2.5', isUser && 'flex-row-reverse')}>
@@ -598,22 +879,61 @@ function MessageBubble({
         )}
         title={new Date(message.timestamp).toLocaleString('zh-CN')}
       >
-        {isUser ? (
+        {isEditing && isUser ? (
+          <div className="min-w-[240px]">
+            <textarea
+              autoFocus
+              value={editDraft}
+              onChange={(e) => onEditChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') onEditCancel()
+              }}
+              rows={Math.min(6, Math.max(2, editDraft.split('\n').length))}
+              className="w-full text-sm leading-relaxed whitespace-pre-wrap rounded-xl bg-white/95 text-gray-900 p-3 border border-white/40 focus:outline-none focus:ring-2 focus:ring-white/60 resize-none"
+            />
+            <div className="flex justify-end gap-2 mt-2">
+              <button
+                onClick={onEditCancel}
+                className="px-3 py-1.5 text-xs rounded-lg bg-white/15 hover:bg-white/25 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={onEditSave}
+                disabled={!editDraft.trim()}
+                className="px-3 py-1.5 text-xs rounded-lg bg-white text-brand-700 font-medium hover:bg-brand-50 transition-colors disabled:opacity-40"
+              >
+                保存并重发
+              </button>
+            </div>
+          </div>
+        ) : isUser ? (
           <>
             <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
               {message.content}
             </p>
-            <button
-              onClick={handleCopy}
-              className="mt-1.5 ml-auto flex items-center gap-1 text-[11px] text-white/60 hover:text-white transition-colors opacity-0 group-hover:opacity-100"
-              title="复制"
-            >
-              {copied ? (
-                <><Check className="w-3 h-3" /> 已复制</>
-              ) : (
-                <><Copy className="w-3 h-3" /> 复制</>
+            <div className="mt-1.5 flex items-center gap-3 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+              {canEdit && (
+                <button
+                  onClick={onStartEdit}
+                  className="flex items-center gap-1 text-[11px] text-white/60 hover:text-white transition-colors"
+                  title="编辑并重发"
+                >
+                  <Pencil className="w-3 h-3" /> 编辑
+                </button>
               )}
-            </button>
+              <button
+                onClick={handleCopy}
+                className="flex items-center gap-1 text-[11px] text-white/60 hover:text-white transition-colors"
+                title="复制"
+              >
+                {copied ? (
+                  <><Check className="w-3 h-3" /> 已复制</>
+                ) : (
+                  <><Copy className="w-3 h-3" /> 复制</>
+                )}
+              </button>
+            </div>
           </>
         ) : message.error ? (
           <div className="flex items-center gap-2">
@@ -673,18 +993,35 @@ function MessageBubble({
           </div>
         )}
 
-        {/* 助手消息整条复制按钮 */}
+        {/* 助手消息操作行：复制 + 重新生成（仅最后一轮） */}
         {!isUser && !message.error && message.content && (
-          <button
-            onClick={handleCopy}
-            className="mt-1 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            {copied ? (
-              <><Check className="w-3 h-3" /> 已复制</>
-            ) : (
-              <><Copy className="w-3 h-3" /> 复制</>
+          <div className="mt-1 flex items-center gap-4 text-xs text-gray-400">
+            <button
+              onClick={handleCopy}
+              className="flex items-center gap-1 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            >
+              {copied ? (
+                <><Check className="w-3 h-3" /> 已复制</>
+              ) : (
+                <><Copy className="w-3 h-3" /> 复制</>
+              )}
+            </button>
+            {onRegenerate && isLastAssistant && (
+              <button
+                onClick={onRegenerate}
+                disabled={sending}
+                className="flex items-center gap-1 hover:text-brand-600 dark:hover:text-brand-300 transition-colors disabled:opacity-40"
+                title="重新生成回复"
+              >
+                {sending ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3 h-3" />
+                )}
+                重新生成
+              </button>
             )}
-          </button>
+          </div>
         )}
 
         {/* 代码执行结果卡片 */}

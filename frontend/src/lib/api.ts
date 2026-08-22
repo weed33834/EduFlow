@@ -29,6 +29,8 @@ export interface AuthResponse {
 export interface SessionSummary {
   id: number
   title?: string | null
+  pinned?: boolean
+  archived?: boolean
   started_at: string | null
   ended_at: string | null
   message_count: number
@@ -168,15 +170,19 @@ export const authAPI = {
 }
 
 export const sessionAPI = {
-  list: () => request<SessionSummary[]>('/sessions'),
+  list: (archived = false) =>
+    request<SessionSummary[]>(`/sessions${archived ? '?archived=true' : ''}`),
   get: (id: number) => request<SessionDetail>(`/sessions/${id}`),
   remove: (id: number) =>
     request<{ ok: boolean }>(`/sessions/${id}`, { method: 'DELETE' }),
-  rename: (id: number, summary: string) =>
-    request<{ ok: boolean; summary: string | null }>(`/sessions/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ summary }),
-    }),
+  update: (
+    id: number,
+    data: { summary?: string; pinned?: boolean; archived?: boolean },
+  ) =>
+    request<{ ok: boolean; summary: string | null; pinned: boolean; archived: boolean }>(
+      `/sessions/${id}`,
+      { method: 'PATCH', body: JSON.stringify(data) },
+    ),
 }
 
 export const profileAPI = {
@@ -244,29 +250,41 @@ export function newRequestId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`
 }
 
-export async function chatStream(
-  message: string,
-  sessionId: number | null,
+/** 通用 SSE 对话流：chat / regenerate / edit 共用 */
+async function streamChatSSE(
+  body: Record<string, unknown>,
   onEvent: (data: ChatResponseData) => void,
   onError: (err: Error) => void,
   signal?: AbortSignal,
+  useRetry = false,
 ) {
   const token = getToken()
-  const requestId = newRequestId() // 同一次发送的所有重试共用，后端据此去重
+  const doFetch = () => fetch(`${API_ROOT}/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+    signal,
+  })
+
   try {
-    const res = await retryWithBackoff(() => fetch(`${API_ROOT}/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ message, session_id: sessionId, request_id: requestId }),
-      signal,
-    }))
+    const res = await (useRetry ? retryWithBackoff(doFetch) : doFetch())
 
     if (!res.ok || !res.body) {
       const errText = await res.text().catch(() => '')
-      throw new Error(errText || `请求失败 (${res.status})`)
+      let message = errText || `请求失败 (${res.status})`
+      // FastAPI 校验错误体是 {detail:[...]} 数组
+      try {
+        const parsed = JSON.parse(errText)
+        if (Array.isArray(parsed.detail)) {
+          message = parsed.detail.map((d: { msg?: string }) => d.msg || '').join('; ') || message
+        } else if (typeof parsed.detail === 'string') {
+          message = parsed.detail
+        }
+      } catch { /* 非 JSON 体，保留原文 */ }
+      throw new Error(message)
     }
 
     const reader = res.body.getReader()
@@ -302,4 +320,43 @@ export async function chatStream(
     if (err instanceof DOMException && err.name === 'AbortError') return
     onError(err instanceof Error ? err : new Error('对话失败'))
   }
+}
+
+export async function chatStream(
+  message: string,
+  sessionId: number | null,
+  onEvent: (data: ChatResponseData) => void,
+  onError: (err: Error) => void,
+  signal?: AbortSignal,
+) {
+  const requestId = newRequestId() // 同一次发送的所有重试共用，后端据此去重
+  await streamChatSSE(
+    { message, session_id: sessionId, request_id: requestId },
+    onEvent, onError, signal, true, // 幂等键在，网络重试安全
+  )
+}
+
+/** v0.6.0 重新生成：重跑会话最后一轮（不可自动重试） */
+export async function regenerateStream(
+  sessionId: number,
+  onEvent: (data: ChatResponseData) => void,
+  onError: (err: Error) => void,
+  signal?: AbortSignal,
+) {
+  await streamChatSSE({ regenerate: true, session_id: sessionId }, onEvent, onError, signal)
+}
+
+/** v0.6.0 编辑用户消息并重发：后端截断其后消息、原位更新并重跑 */
+export async function editResendStream(
+  sessionId: number,
+  messageId: number,
+  newContent: string,
+  onEvent: (data: ChatResponseData) => void,
+  onError: (err: Error) => void,
+  signal?: AbortSignal,
+) {
+  await streamChatSSE(
+    { session_id: sessionId, message_id: messageId, new_content: newContent },
+    onEvent, onError, signal,
+  )
 }
