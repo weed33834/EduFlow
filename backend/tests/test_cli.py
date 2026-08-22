@@ -67,6 +67,15 @@ def test_stats_returns_counts(client, auth_headers):
     assert isinstance(stats["review_due_now"], int)
 
 
+def test_stats_csv_output(client, auth_headers, capsys):
+    """--csv 输出表头与键值行"""
+    mod = _load_cli()
+    asyncio.run(mod.cmd_stats(_Args(csv=True)))
+    out = capsys.readouterr().out
+    assert "metric,value" in out
+    assert "users," in out and "review_due_now," in out
+
+
 class _Args:
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)

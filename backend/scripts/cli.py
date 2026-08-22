@@ -31,7 +31,7 @@ def _print_traces(args) -> None:
         print("（没有匹配的追踪记录）")
 
 
-async def cmd_stats(_args) -> dict:
+async def cmd_stats(args) -> dict:
     from sqlalchemy import select, func as sa_func
     from app.database import async_session, init_db
     from app.models import User, Session, Message, ReviewItem
@@ -55,9 +55,13 @@ async def cmd_stats(_args) -> dict:
         )
         stats["review_due_now"] = due.scalar() or 0
 
-    print("EduAgent 数据统计")
-    for k, v in stats.items():
-        print(f"  {k:>16}: {v}")
+    if getattr(args, "csv", False):
+        lines = ["metric,value"] + [f"{k},{v}" for k, v in stats.items()]
+        print("\n".join(lines))
+    else:
+        print("EduAgent 数据统计")
+        for k, v in stats.items():
+            print(f"  {k:>16}: {v}")
     return stats
 
 
@@ -112,7 +116,8 @@ def main() -> None:
     p_traces.add_argument("-n", type=int, default=20)
     p_traces.add_argument("--dir", default=settings.TRACE_DIR)
 
-    sub.add_parser("stats", help="数据库统计")
+    p_stats = sub.add_parser("stats", help="数据库统计")
+    p_stats.add_argument("--csv", action="store_true", help="以 CSV 格式输出")
 
     p_user = sub.add_parser("create-user", help="创建用户（含默认画像）")
     p_user.add_argument("--email", required=True)
