@@ -10,34 +10,38 @@
 EduAgent/
 ├── backend/                  # FastAPI 后端（单服务）
 │   ├── app/
-│   │   ├── main.py           # 入口
-│   │   ├── config.py          # 配置（LLM/E2B/Qdrant/Mem0）
-│   │   ├── database.py        # 数据库引擎
-│   │   ├── security.py        # JWT + bcrypt
-│   │   ├── models.py          # 数据模型（User/Session/Message/ReviewItem）
-│   │   ├── agents/            # LangGraph 状态机
-│   │   │   ├── state.py       # AgentState 定义
-│   │   │   ├── nodes.py       # 9 节点：understand→recall→plan→[teach|quiz|code|review|respond]→reflect
-│   │   │   └── graph.py       # StateGraph + MemorySaver Checkpointer
+│   │   ├── main.py           # 入口（生产模式安全检查 fail-fast）
+│   │   ├── config.py         # 配置（LLM/E2B/Qdrant/Mem0/限流）
+│   │   ├── database.py       # 数据库引擎
+│   │   ├── ratelimit.py      # 进程内滑动窗口限流
+│   │   ├── security.py       # JWT + bcrypt
+│   │   ├── models.py         # 数据模型（User/Session/Message/ReviewItem）
+│   │   ├── agents/           # LangGraph 状态机
+│   │   │   ├── state.py      # AgentState 定义
+│   │   │   ├── nodes.py      # 10 节点：understand→recall→plan→[teach|quiz|code|review|judge]→respond→reflect
+│   │   │   └── graph.py      # StateGraph + PostgresSaver/MemorySaver Checkpointer
 │   │   ├── tools/            # 工具层（全部用开源项目）
-│   │   │   ├── llm.py         # LiteLLM 封装 + JSON mode
-│   │   │   ├── sandbox.py     # E2B 代码沙箱
-│   │   │   ├── knowledge.py   # Qdrant + LiteLLM embedding RAG
-│   │   │   └── memory.py      # Mem0 长期记忆
+│   │   │   ├── llm.py        # LiteLLM 封装 + JSON mode + 调用追踪日志 + 真流式
+│   │   │   ├── sandbox.py    # E2B 代码沙箱（2.x API）
+│   │   │   ├── knowledge.py  # Qdrant RAG + 分块器
+│   │   │   └── memory.py     # Mem0 长期记忆（AsyncMemory）
 │   │   └── routers/          # API 路由
-│   │       ├── auth.py        # 认证（注册/登录/获取用户）
-│   │       ├── chat.py        # SSE 流式对话（Agent 核心）
-│   │       ├── sessions.py    # 会话管理
-│   │       └── profile.py     # 学生画像
-│   ├── requirements.txt
+│   │       ├── auth.py       # 认证（注册/登录/获取用户，IP 限流）
+│   │       ├── chat.py       # SSE 流式对话 + 判题闭环 + FSRS 重排（用户限流）
+│   │       ├── sessions.py   # 会话管理
+│   │       └── profile.py    # 学生画像（判题结果自动回写 strengths/weaknesses）
+│   ├── scripts/
+│   │   └── ingest_knowledge.py  # 知识库摄入 CLI
+│   ├── tests/                # pytest 套件（80 用例，全离线可跑）
+│   ├── requirements.txt      # 全量精确钉版
 │   └── Dockerfile
 ├── frontend/                 # Next.js 14 前端
 │   └── src/
 │       ├── app/
 │       │   ├── page.tsx       # 落地页
 │       │   ├── login/        # 登录
-│       │   ├── register/     # 注册
-│       │   └── chat/         # 主界面（单页对话 + 流式 + 代码结果）
+│       │       ├── register/     # 注册
+│       │   └── chat/         # 主界面（SSE 流式 + 判题反馈 + 代码结果）
 │       ├── contexts/         # AuthContext
 │       ├── components/       # RouteGuard
 │       └── lib/              # API 客户端 + 工具
@@ -93,20 +97,49 @@ npm run dev
 ## Agent 状态机
 
 ```
-understand → recall → plan → [teach | quiz | code | review | respond] → respond → reflect → END
+understand → recall → plan → [teach | quiz | code | review | judge] → respond → reflect → END
 ```
 
 | 节点 | 功能 |
 |---|---|
-| understand | 意图分类（learn_concept/practice/run_code/ask_question/chitchat） |
+| understand | 意图分类（带最近 6 轮上下文消解指代；LLM JSON mode / 关键词降级） |
 | recall | Mem0 检索长期记忆 + Qdrant 检索知识库文档 |
-| plan | 检查 FSRS 到期复习项 → review；否则按意图路由 |
-| teach | 讲解概念，带入知识库参考文档 + 学生记忆 |
+| plan | 判题优先（待作答 quiz/review）→ 到期复习项 → 按意图路由 |
+| teach | 讲解概念，带入知识库参考文档 + 学生记忆（真流式输出） |
 | quiz | 出题（LiteLLM JSON mode 保证结构化输出） |
-| code | E2B 沙箱执行学生代码 → LLM 根据输出给反馈 |
-| review | FSRS 间隔重复，生成复习内容 |
+| judge | 判题闭环：quiz 选项确定性判分 / review 复述 LLM 判卷，映射 FSRS rating |
+| code | E2B 沙箱执行学生代码 → LLM 根据输出给反馈（真流式输出） |
+| review | FSRS 间隔重复，生成复习内容；作答后按判题结果重排卡片 due |
 | respond | 组织回复，加入对话历史（Checkpointer 自动持久化） |
 | reflect | Mem0 自动保存对话记忆 |
+
+## 学习闭环
+
+- **判题**：出题后学生回复 A-D 即触发 judge；答对 rating=3、答错 rating=1
+- **间隔重复**：fsrs 包按作答质量重排每张卡片的下次到期时间；同概念只建一张卡
+- **画像回写**：判题结果自动写入 StudentProfile 的 strengths/weaknesses（各留最近 20 条）
+
+## 知识库摄入
+
+RAG 需要先把文档灌进 Qdrant：
+
+```bash
+cd backend
+python scripts/ingest_knowledge.py --dir ../docs --pattern "**/*.md"
+```
+
+## 可观测性与限流
+
+- 每次 LLM 调用记录结构化日志：`llm.call model=... dur_ms=... out_chars=... stream=...`，失败带堆栈
+- chat 接口按用户限流（默认 20 次/分钟），认证接口按 IP 限流（默认 10 次/分钟），超限返回 429 + Retry-After
+
+## 测试
+
+```bash
+cd backend
+pip install -r requirements.txt
+pytest   # 全离线可跑（外部服务均 mock/降级）
+```
 
 ## 降级机制
 
@@ -126,7 +159,8 @@ understand → recall → plan → [teach | quiz | code | review | respond] → 
 |---|---|---|
 | v0.1.0 | 最小对话闭环（教概念+出题+历史保存） | ✅ 已完成 |
 | v0.2.0 | 代码沙箱 + 知识库 RAG + 长期记忆 + 间隔重复 + 流式 SSE | ✅ 已完成 |
-| v0.3.0 | 前端打磨（移动端 + 深色模式 + 真增量流式） | 📋 计划 |
+| v0.4.x | Agent 核心闭环：判题节点 + FSRS 按质重排 + 真增量流式 + PostgresSaver 持久化 + 知识库摄入 + 画像回写 + 限流 + 追踪日志 + 评估集 | ✅ 已完成 |
+| v0.5.0 | 前端打磨（移动端适配 + 深色模式）+ LangSmith/Langfuse 外部追踪 + Redis 分布式限流 | 📋 计划 |
 
 ## License
 
