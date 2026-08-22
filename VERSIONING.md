@@ -28,10 +28,15 @@
 | v0.4.8 | feat(observability): LLM 追踪日志 | 小 | 日志埋点，零行为变化 |
 | v0.4.9 | test(evals): 意图评估集 | 小 | 测试资产 |
 | v0.4.10 | docs: README 对齐 | 小 | 文档 |
+| v0.4.12~20 | 全量审计修复批次（吞错日志/消重/CI 冷装/外部追踪/Redis 限流/深色模式/AUDIT.md） | 小×9 | 每项独立成点，见 AUDIT.md |
+| v0.4.21 | fix(chat): request_id 幂等键 | 小 | 审计遗留修复 |
+| v0.4.22 | test(profile): 路由直测 + 限流单例隔离修复 | 小 | 测试资产 |
+| v0.4.23 | feat(frontend): 判题结果可视化回显 | 小 | 已有闭环的 UI 呈现 |
+| v0.4.24 | chore(deploy): 生产部署覆盖示例 | 小 | 部署配置 |
+| **v0.5.0** | **feat(frontend): Next 14→16 + React 18→19 框架升级** | **大** | 前端框架跨两个大版本；清零 48→0 个依赖漏洞；
+裸 npm install 取代 legacy-peer-deps；需整体回归发布 |
 
-## 未来大迭代候选（升 0.5.0 / 0.6.0 的门槛）
+## 大迭代记录
 
-- 前端打磨成体系落地（移动端+深色模式+判题 UI 重构）
-- 外部可观测平台接入（LangSmith/Langfuse）
-- Redis 分布式限流 / 多 worker 会话一致性
-- 多 Agent 协作或工具自主规划（当前是固定状态机）
+- **v0.4.0**：Agent 核心交互闭环（judge 节点 + 真流式 + 持久化 checkpointer）
+- **v0.5.0**：前端框架现代化（Next 15/16 + React 19 + 类型链升级）
