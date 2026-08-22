@@ -209,12 +209,18 @@ async function retryWithBackoff<T>(
 
 /* ─────────────────── 对话（SSE 流式） ─────────────────── */
 
+export interface JudgedSummary {
+  mode: 'quiz' | 'review'
+  correct: boolean
+}
+
 export interface ChatResponseData {
-  type: 'status' | 'stream' | 'message' | 'quiz' | 'complete'
+  type: 'status' | 'stream' | 'complete'
   content: string
   session_id?: number
   quiz?: QuizData
   code_result?: CodeResult
+  judged?: JudgedSummary
 }
 
 export async function chatStream(
