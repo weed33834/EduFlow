@@ -37,3 +37,4 @@ Thumbs.db
 *.cache
 coverage/
 .nyc_output/
+logs/
