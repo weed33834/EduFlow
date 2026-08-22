@@ -40,10 +40,13 @@ chat_limiter = build_limiter(
 
 
 class ChatRequest(BaseModel):
-    message: str
+    # regenerate 模式下不需要传 message
+    message: str = ""
     session_id: int | None = None
     # 幂等键：客户端为每次发送生成唯一 ID；同键重复请求不重复入库、直接回放上次回复
     request_id: str | None = None
+    # v0.6.0 重新生成：忽略 message，取会话最后一轮用户消息重跑
+    regenerate: bool = False
 
 
 def _sse(payload: dict) -> str:
@@ -69,6 +72,10 @@ async def chat(
             headers={"Retry-After": str(int(retry_after) + 1)},
         )
 
+    # 普通发送必须携带非空消息（重新生成模式忽略 message 字段）
+    if not req.regenerate and not req.message.strip():
+        raise HTTPException(status_code=400, detail="消息不能为空")
+
     # 获取或创建会话
     if req.session_id:
         result = await db.execute(
@@ -77,27 +84,49 @@ async def chat(
         session = result.scalar_one_or_none()
         if not session:
             raise HTTPException(status_code=404, detail="会话不存在")
-
-        # 幂等检查：同 request_id 的重复请求直接回放上次回复，不再入库/再跑 Agent
-        if req.request_id:
-            replay = await find_duplicate_request(db, session.id, req.request_id)
-            if replay is not None:
-                return replay_response(session.id, replay)
     else:
+        if req.regenerate:
+            raise HTTPException(status_code=400, detail="重新生成需要指定会话")
         # 首条消息截断作为会话标题（ChatGPT 式自动命名）
         auto_title = " ".join(req.message.split())[:30]
         session = Session(user_id=user.id, summary=auto_title or None)
         db.add(session)
         await db.flush()
 
-    # 保存用户消息（给前端展示用，Agent 历史由 checkpointer 管）
-    user_metadata = {"request_id": req.request_id} if req.request_id else {}
-    db.add(Message(
-        session_id=session.id,
-        role="user",
-        content=req.message,
-        metadata_=user_metadata,
-    ))
+    # v0.6.0 重新生成：定位最后一轮问答，删除旧助手回复，原问题重跑
+    effective_message = req.message
+    regenerate_user_row_id: int | None = None
+    if req.regenerate:
+        last_user, last_assistant = await find_last_exchange(db, session.id)
+        if not last_user:
+            raise HTTPException(status_code=400, detail="会话中没有可重新生成的消息")
+        effective_message = last_user.content
+        regenerate_user_row_id = last_user.id
+        if last_assistant:
+            await db.delete(last_assistant)
+
+    # 历史以 DB 为唯一事实源：读取当前消息之前的全部对话（当前消息稍后入库）
+    prior_history = await build_history(
+        db, session.id, exclude_from_id=regenerate_user_row_id,
+    )
+    pending_quiz, pending_review = await load_pending_context(
+        db, session.id, exclude_from_id=regenerate_user_row_id,
+    )
+
+    # 幂等检查（仅普通发送）：同 request_id 的重复请求直接回放上次回复
+    if req.request_id and not req.regenerate:
+        replay = await find_duplicate_request(db, session.id, req.request_id)
+        if replay is not None:
+            return replay_response(session.id, replay)
+
+    # 保存用户消息（重新生成时不新增用户行，复用已有行）
+    if not req.regenerate:
+        db.add(Message(
+            session_id=session.id,
+            role="user",
+            content=req.message,
+            metadata_=({"request_id": req.request_id} if req.request_id else {}),
+        ))
     await db.commit()
 
     # 获取学生画像
@@ -123,19 +152,43 @@ async def chat(
         for r in review_result.scalars().all()
     ]
 
-    # 加载上一轮留下的待作答内容（判题闭环的入口）
-    pending_quiz, pending_review = await load_pending_context(db, session.id)
+    return run_agent_stream(
+        session=session,
+        user_id=user.id,
+        effective_message=effective_message,
+        prior_history=prior_history,
+        pending_quiz=pending_quiz,
+        pending_review=pending_review,
+        review_items=review_items,
+        profile_dict=profile_dict,
+    )
 
+
+def run_agent_stream(
+    *,
+    session: Session,
+    user_id: int,
+    effective_message: str,
+    prior_history: list[dict],
+    pending_quiz: dict,
+    pending_review: dict,
+    review_items: list[dict],
+    profile_dict: dict,
+) -> StreamingResponse:
+    """执行 Agent 状态机并返回 SSE 流；结束后持久化回复与判题副作用。
+
+    chat（普通发送/重新生成）与 chat/edit 共用此管线。
+    """
     initial_state = {
-        "user_message": req.message,
-        "user_id": user.id,
+        "user_message": effective_message,
+        "user_id": user_id,
         "session_id": session.id,
         "student_profile": profile_dict,
         "review_items": review_items,
+        "history": prior_history,  # v0.6.0 起 DB 为唯一事实源
         "pending_quiz": pending_quiz,
         "pending_review": pending_review,
     }
-    config = {"configurable": {"thread_id": str(session.id)}}
 
     # 追踪上下文：本次请求的所有 LLM span 关联到同一 trace
     trace_id_var.set(new_trace_id())
@@ -150,7 +203,6 @@ async def chat(
             # 真流式：custom channel 推增量 token，updates channel 汇总各节点产出
             async for mode, payload in graph_module.agent_graph.astream(
                 initial_state,
-                config=config,
                 stream_mode=["custom", "updates"],
             ):
                 if mode == "custom":
@@ -182,7 +234,7 @@ async def chat(
                 metadata["quiz"] = {
                     **quiz_payload,
                     "answered": False,
-                    "concept": req.message[:100],
+                    "concept": effective_message[:100],
                 }
             if code_payload:
                 metadata["code_result"] = code_payload
@@ -203,7 +255,7 @@ async def chat(
                     or ""
                 )
                 await update_profile_on_judge(
-                    db2, user.id, bool(judge_result.get("correct")), judge_concept
+                    db2, user_id, bool(judge_result.get("correct")), judge_concept
                 )
             if review_item_id:
                 metadata["review_item_id"] = review_item_id
@@ -236,13 +288,13 @@ async def chat(
                     updated["review_answered"] = True
                     prev_msg.metadata_ = updated
 
-            await apply_fsrs_reschedule(db2, user.id, judge_result)
+            await apply_fsrs_reschedule(db2, user_id, judge_result)
 
             # 学生学了新概念 → 创建复习卡（同一概念只建一张）
             if (final_state.get("intent") == "learn_concept"
                     and final_state.get("teach_content")):
                 await create_review_card_once(
-                    db2, user.id, req.message[:200]
+                    db2, user_id, effective_message[:200]
                 )
 
             fresh_session = await db2.get(Session, session.id)
@@ -250,7 +302,7 @@ async def chat(
                 fresh_session.ended_at = datetime.now()
                 # 旧会话无标题时用首条消息补齐（重命名过的不动）
                 if not fresh_session.summary:
-                    fresh_session.summary = " ".join(req.message.split())[:30] or None
+                    fresh_session.summary = " ".join(effective_message.split())[:30] or None
             await db2.commit()
 
         # 发送完整数据（包含 quiz/code/judged 等结构化数据）
@@ -276,6 +328,90 @@ async def chat(
             "Connection": "keep-alive",
             "X-Session-Id": str(session.id),
         },
+    )
+
+
+class EditRequest(BaseModel):
+    session_id: int
+    message_id: int
+    new_content: str
+
+
+@router.post("/chat/edit")
+async def edit_and_rerun(
+    req: EditRequest,
+    user: User = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """编辑某条用户消息并重跑：截断其后全部消息，原位更新文本后重新执行 Agent"""
+    if not await chat_limiter.allow(f"user:{user.id}"):
+        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+
+    result = await db.execute(
+        select(Session).where(Session.id == req.session_id, Session.user_id == user.id)
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    msg_result = await db.execute(
+        select(Message).where(
+            Message.id == req.message_id,
+            Message.session_id == session.id,
+            Message.role == "user",
+        )
+    )
+    target = msg_result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="目标消息不存在")
+
+    new_content = req.new_content.strip()
+    if not new_content:
+        raise HTTPException(status_code=400, detail="内容不能为空")
+
+    # 截断：删除目标行之后的所有消息；目标行原位更新
+    await db.execute(
+        Message.__table__.delete().where(
+            Message.session_id == session.id, Message.id > req.message_id,
+        )
+    )
+    target.content = new_content
+    await db.commit()
+
+    prior_history = await build_history(db, session.id, exclude_from_id=req.message_id)
+    pending_quiz, pending_review = await load_pending_context(
+        db, session.id, exclude_from_id=req.message_id,
+    )
+
+    profile_result = await db.execute(
+        select(StudentProfile).where(StudentProfile.user_id == user.id)
+    )
+    profile = profile_result.scalar_one_or_none()
+    profile_dict = {
+        "current_level": profile.current_level if profile else "beginner",
+        "learning_goal": profile.learning_goal or "" if profile else "",
+    }
+    now = datetime.now()
+    review_result = await db.execute(
+        select(ReviewItem)
+        .where(ReviewItem.user_id == user.id, ReviewItem.due <= now)
+        .order_by(ReviewItem.due)
+        .limit(3)
+    )
+    review_items = [
+        {"concept": r.concept, "card_data": r.card_data, "id": r.id}
+        for r in review_result.scalars().all()
+    ]
+
+    return run_agent_stream(
+        session=session,
+        user_id=user.id,
+        effective_message=new_content,
+        prior_history=prior_history,
+        pending_quiz=pending_quiz,
+        pending_review=pending_review,
+        review_items=review_items,
+        profile_dict=profile_dict,
     )
 
 
@@ -331,16 +467,64 @@ def replay_response(session_id: int, content: str) -> StreamingResponse:
     )
 
 
-async def load_pending_context(db, session_id: int) -> tuple[dict, dict]:
-    """读取该会话最后一条助手消息，还原待作答的 quiz / review。
+async def build_history(db, session_id: int,
+                        exclude_from_id: int | None = None) -> list[dict]:
+    """从 DB Message 表构建对话历史（v0.6.0 起为唯一事实源）。
 
-    返回 (pending_quiz, pending_review)，两者互斥、最多一个生效。
+    exclude_from_id：截断点（含）之后的消息不纳入。
     """
-    result = await db.execute(
+    query = select(Message).where(Message.session_id == session_id)
+    if exclude_from_id is not None:
+        query = query.where(Message.id < exclude_from_id)
+    result = await db.execute(query.order_by(Message.created_at, Message.id))
+    return [
+        {"role": m.role, "content": m.content}
+        for m in result.scalars().all()
+        if m.role in ("user", "assistant") and m.content
+    ]
+
+
+async def find_last_exchange(db, session_id: int):
+    """定位最后一组问答：(最后一条 user 消息, 其后的 assistant 回复)"""
+    u_result = await db.execute(
         select(Message)
-        .where(Message.session_id == session_id, Message.role == "assistant")
+        .where(Message.session_id == session_id, Message.role == "user")
         .order_by(Message.created_at.desc(), Message.id.desc())
         .limit(1)
+    )
+    last_user = u_result.scalar_one_or_none()
+    if not last_user:
+        return None, None
+
+    a_result = await db.execute(
+        select(Message)
+        .where(
+            Message.session_id == session_id,
+            Message.role == "assistant",
+            Message.id > last_user.id,
+        )
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(1)
+    )
+    last_assistant = a_result.scalar_one_or_none()
+    return last_user, last_assistant
+
+
+async def load_pending_context(
+    db, session_id: int, exclude_from_id: int | None = None,
+) -> tuple[dict, dict]:
+    """读取该会话最后一条助手消息，还原待作答的 quiz / review。
+
+    exclude_from_id：重新生成/编辑重发时，截断点之后的消息视为不存在。
+    返回 (pending_quiz, pending_review)，两者互斥、最多一个生效。
+    """
+    query = select(Message).where(
+        Message.session_id == session_id, Message.role == "assistant"
+    )
+    if exclude_from_id is not None:
+        query = query.where(Message.id < exclude_from_id)
+    result = await db.execute(
+        query.order_by(Message.created_at.desc(), Message.id.desc()).limit(1)
     )
     last_msg = result.scalar_one_or_none()
     if not last_msg or not last_msg.metadata_:

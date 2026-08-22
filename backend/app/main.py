@@ -6,7 +6,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.agents.graph import use_persistent_checkpointer, close_checkpointer
 from app.database import init_db
 from app.tools.llm import setup_external_callbacks
 from app.routers import auth, chat, sessions, profile
@@ -38,16 +37,13 @@ async def lifespan(app: FastAPI):
     await init_db()
     assert_production_security()
     setup_external_callbacks()
-    persisted = await use_persistent_checkpointer()
-    logger.info("Checkpointer 持久化: %s", "PostgreSQL" if persisted else "MemorySaver(进程内)")
     yield
-    await close_checkpointer()
 
 
 app = FastAPI(
     title="EduAgent",
     description="AI 编程学习 Agent",
-    version="0.5.7",
+    version="0.6.0",
     lifespan=lifespan,
 )
 
@@ -69,4 +65,4 @@ app.include_router(profile.router)
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "0.5.7"}
+    return {"status": "ok", "version": "0.6.0"}

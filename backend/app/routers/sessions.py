@@ -36,14 +36,15 @@ class SessionDetail(BaseModel):
 
 @router.get("", response_model=list[SessionSummary])
 async def list_sessions(
+    archived: bool = False,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """列出用户的会话"""
+    """列出用户的会话（默认不含归档；archived=true 只看归档；置顶在前）"""
     result = await db.execute(
         select(Session)
-        .where(Session.user_id == user.id)
-        .order_by(desc(Session.created_at))
+        .where(Session.user_id == user.id, Session.archived == archived)
+        .order_by(Session.pinned.desc(), desc(Session.created_at))
         .limit(50)
     )
     sessions = result.scalars().all()
@@ -75,18 +76,20 @@ async def list_sessions(
     return summaries
 
 
-class SessionRename(BaseModel):
-    summary: str
+class SessionUpdate(BaseModel):
+    summary: str | None = None
+    pinned: bool | None = None
+    archived: bool | None = None
 
 
 @router.patch("/{session_id}")
-async def rename_session(
+async def update_session(
     session_id: int,
-    data: SessionRename,
+    data: SessionUpdate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """重命名会话（ChatGPT 式 sidebar rename）"""
+    """更新会话元信息：重命名 / 置顶 / 归档"""
     result = await db.execute(
         select(Session).where(Session.id == session_id, Session.user_id == user.id)
     )
@@ -94,10 +97,20 @@ async def rename_session(
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在")
 
-    cleaned = " ".join(data.summary.split())[:60]
-    session.summary = cleaned or None
+    if data.summary is not None:
+        cleaned = " ".join(data.summary.split())[:60]
+        session.summary = cleaned or None
+    if data.pinned is not None:
+        session.pinned = data.pinned
+    if data.archived is not None:
+        session.archived = data.archived
     await db.commit()
-    return {"ok": True, "summary": session.summary}
+    return {
+        "ok": True,
+        "summary": session.summary,
+        "pinned": session.pinned,
+        "archived": session.archived,
+    }
 
 
 @router.get("/{session_id}", response_model=SessionDetail)
