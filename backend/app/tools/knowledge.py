@@ -4,6 +4,7 @@
 pip install qdrant-client — 轻量
 GitHub: https://github.com/qdrant/qdrant
 """
+import logging
 import os
 from typing import Optional
 
@@ -17,6 +18,8 @@ except ImportError:
 import litellm
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 COLLECTION = "eduagent"
 _client: Optional["QdrantClient"] = None
@@ -38,6 +41,7 @@ def get_client() -> Optional["QdrantClient"]:
                     vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
                 )
         except Exception:
+            logger.warning("Qdrant 连接/建集合失败 url=%s", url, exc_info=True)
             _client = None
     return _client
 
@@ -69,16 +73,17 @@ async def search_knowledge(query: str, top_k: int = 3) -> list[dict]:
         return []
 
     try:
-        results = client.search(
+        response = client.query_points(
             collection_name=COLLECTION,
-            query_vector=query_vec,
+            query=query_vec,
             limit=top_k,
         )
         return [
-            {"text": r.payload.get("text", ""), "score": r.score, "metadata": r.payload}
-            for r in results
+            {"text": p.payload.get("text", ""), "score": p.score, "metadata": p.payload}
+            for p in response.points
         ]
     except Exception:
+        logger.warning("知识库检索失败", exc_info=True)
         return []
 
 
@@ -103,7 +108,7 @@ async def add_document(text: str, metadata: dict = None):
             )],
         )
     except Exception:
-        pass
+        logger.warning("知识库写入失败", exc_info=True)
 
 
 async def is_available() -> bool:
