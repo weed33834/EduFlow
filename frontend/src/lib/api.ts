@@ -28,6 +28,7 @@ export interface AuthResponse {
 
 export interface SessionSummary {
   id: number
+  title?: string | null
   started_at: string | null
   ended_at: string | null
   message_count: number
@@ -171,6 +172,11 @@ export const sessionAPI = {
   get: (id: number) => request<SessionDetail>(`/sessions/${id}`),
   remove: (id: number) =>
     request<{ ok: boolean }>(`/sessions/${id}`, { method: 'DELETE' }),
+  rename: (id: number, summary: string) =>
+    request<{ ok: boolean; summary: string | null }>(`/sessions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ summary }),
+    }),
 }
 
 export const profileAPI = {

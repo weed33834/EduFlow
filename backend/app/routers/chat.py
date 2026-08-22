@@ -84,7 +84,9 @@ async def chat(
             if replay is not None:
                 return replay_response(session.id, replay)
     else:
-        session = Session(user_id=user.id)
+        # 首条消息截断作为会话标题（ChatGPT 式自动命名）
+        auto_title = " ".join(req.message.split())[:30]
+        session = Session(user_id=user.id, summary=auto_title or None)
         db.add(session)
         await db.flush()
 
@@ -246,6 +248,9 @@ async def chat(
             fresh_session = await db2.get(Session, session.id)
             if fresh_session is not None:
                 fresh_session.ended_at = datetime.now()
+                # 旧会话无标题时用首条消息补齐（重命名过的不动）
+                if not fresh_session.summary:
+                    fresh_session.summary = " ".join(req.message.split())[:30] or None
             await db2.commit()
 
         # 发送完整数据（包含 quiz/code/judged 等结构化数据）

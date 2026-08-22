@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Send, Sparkles, Loader2, Plus, Trash2, MessageSquare,
-  LogOut, Menu, X, Brain, Terminal, Square, Copy, Check, RefreshCw,
+  LogOut, Menu, X, Brain, Terminal, Square, Copy, Check, RefreshCw, Pencil,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -38,6 +38,8 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [loadingSessions, setLoadingSessions] = useState(true)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editValue, setEditValue] = useState('')
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -214,6 +216,28 @@ export default function ChatPage() {
     }
   }
 
+  const startRename = (s: SessionSummary, e: React.SyntheticEvent) => {
+    e.stopPropagation()
+    setEditingId(s.id)
+    setEditValue(s.title || s.last_message || '')
+  }
+
+  const commitRename = useCallback(async () => {
+    const id = editingId
+    setEditingId(null)
+    if (!id) return
+    const title = editValue.trim()
+    if (!title) return
+    try {
+      await sessionAPI.rename(id, title)
+      setSessions((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, title } : s)),
+      )
+    } catch {
+      /* best effort */
+    }
+  }, [editingId, editValue])
+
   const handleLogout = () => {
     logout()
     router.push('/')
@@ -259,6 +283,23 @@ export default function ChatPage() {
             </div>
           ) : (
             sessions.map((s) => (
+              editingId === s.id ? (
+                <div key={s.id} className="px-1 py-1">
+                  <input
+                    autoFocus
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitRename()
+                      if (e.key === 'Escape') setEditingId(null)
+                    }}
+                    onBlur={commitRename}
+                    className="w-full px-2.5 py-2 rounded-lg text-sm bg-white border border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400/60 dark:bg-slate-900"
+                    maxLength={60}
+                  />
+                </div>
+              ) : (
               <button
                 key={s.id}
                 onClick={() => handleSelectSession(s.id)}
@@ -271,17 +312,28 @@ export default function ChatPage() {
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-medium truncate flex-1">
-                  {s.last_message || `对话 #${s.id}`}
+                  {s.title || s.last_message || `对话 #${s.id}`}
+                </span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => startRename(s, e)}
+                  onKeyDown={(e) => e.key === 'Enter' && startRename(s, e)}
+                  className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-brand-600 transition-opacity cursor-pointer flex-shrink-0"
+                  title="重命名"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
                 </span>
                 <Trash2
                   onClick={(e) => handleDeleteSession(s.id, e)}
                   className="w-3.5 h-3.5 text-gray-300 group-hover:text-red-400 flex-shrink-0 transition-colors"
                 />
-                </div>
+              </div>
                 <div className="text-xs text-gray-400 mt-0.5">
                   {s.message_count} 条消息 · {s.started_at ? formatDateTime(s.started_at) : ''}
                 </div>
               </button>
+              )
             ))
           )}
         </div>

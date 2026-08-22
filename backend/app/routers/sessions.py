@@ -13,6 +13,7 @@ router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
 class SessionSummary(BaseModel):
     id: int
+    title: str | None = None
     started_at: str | None
     ended_at: str | None
     message_count: int
@@ -65,12 +66,38 @@ async def list_sessions(
 
         summaries.append(SessionSummary(
             id=s.id,
+            title=s.summary,
             started_at=s.started_at.isoformat() if s.started_at else None,
             ended_at=s.ended_at.isoformat() if s.ended_at else None,
             message_count=count,
             last_message=last_msg.content[:100] if last_msg else None,
         ))
     return summaries
+
+
+class SessionRename(BaseModel):
+    summary: str
+
+
+@router.patch("/{session_id}")
+async def rename_session(
+    session_id: int,
+    data: SessionRename,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """重命名会话（ChatGPT 式 sidebar rename）"""
+    result = await db.execute(
+        select(Session).where(Session.id == session_id, Session.user_id == user.id)
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    cleaned = " ".join(data.summary.split())[:60]
+    session.summary = cleaned or None
+    await db.commit()
+    return {"ok": True, "summary": session.summary}
 
 
 @router.get("/{session_id}", response_model=SessionDetail)
