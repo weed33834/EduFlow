@@ -6,6 +6,9 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./eduagent.db"
 
+    # 运行环境：dev / production（production 下弱配置会拒绝启动）
+    ENV: str = "dev"
+
     # JWT
     JWT_SECRET: str = "change-me-in-production"
     JWT_ALGORITHM: str = "HS256"

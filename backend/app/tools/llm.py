@@ -1,6 +1,6 @@
 """LLM 统一接口（LiteLLM 封装 — 支持 OpenAI/Claude/Gemini 等 100+ 模型）"""
 import json
-from typing import AsyncIterator
+from typing import AsyncIterator, Callable
 
 import litellm
 
@@ -40,6 +40,44 @@ async def chat_completion(
 
     response = await litellm.acompletion(**kwargs)
     return response.choices[0].message.content
+
+
+async def chat_completion_streaming(
+    messages: list[dict],
+    on_delta: Callable[[str], None],
+    system_prompt: str = "",
+    temperature: float = 0.7,
+    max_tokens: int = 2000,
+) -> str:
+    """真流式对话：每收到一个增量就调用 on_delta（推给 LangGraph custom writer），
+    最终返回完整文本。未配置 LLM 时返回空串。"""
+    if not settings.llm_available:
+        return ""
+
+    full_messages: list[dict] = []
+    if system_prompt:
+        full_messages.append({"role": "system", "content": system_prompt})
+    full_messages.extend(messages)
+
+    response = await litellm.acompletion(
+        model=settings.LITELLM_MODEL,
+        messages=full_messages,
+        api_key=settings.LITELLM_API_KEY,
+        api_base=settings.LITELLM_BASE_URL,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        stream=True,
+    )
+    parts: list[str] = []
+    async for chunk in response:
+        delta = chunk.choices[0].delta.content
+        if delta:
+            parts.append(delta)
+            try:
+                on_delta(delta)
+            except Exception:
+                pass
+    return "".join(parts)
 
 
 async def stream_chat(

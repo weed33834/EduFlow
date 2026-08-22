@@ -1,25 +1,32 @@
 """对话路由（SSE 流式）— Agent 核心入口
 
+v0.3.0：
+- 真流式：LangGraph custom stream 增量转发 LLM token（不再切块模拟）
+- 判题闭环：加载上一轮待作答的 quiz / review，判分后回写并按结果重排 FSRS 卡片
+- 学习卡片去重：同一概念只建一张复习卡
+
 集成开源组件：
-- LangGraph Checkpointer：自动管理对话历史（无需手动查数据库）
-- fsrs 包：间隔重复，学生学过概念后自动创建复习卡片
+- LangGraph Checkpointer：自动管理对话历史
+- fsrs 包：间隔重复，按作答质量（正确→3 / 错误→1）调度下次复习时间
 - E2B：代码沙箱执行学生代码
 - Qdrant：知识库 RAG 检索
 - Mem0：长期记忆存储和检索
 """
 import json
-from datetime import datetime, timezone
+import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.database import get_db
+from app.database import get_db, async_session
 from app.deps import get_current_user
 from app.models import User, Session, Message, StudentProfile, ReviewItem
-from app.agents.graph import agent_graph
+from app.agents import graph as graph_module
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -29,16 +36,19 @@ class ChatRequest(BaseModel):
     session_id: int | None = None
 
 
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
 @router.post("/chat")
 async def chat(
     req: ChatRequest,
     user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db=Depends(get_db),
 ):
     """SSE 流式对话
 
-    对话历史由 LangGraph MemorySaver 自动管理（按 session_id 持久化）。
-    回复分块发送，前端体验更流畅。
+    对话历史由 LangGraph Checkpointer 管理；LLM 输出通过 custom stream 实时增量推送。
     """
     # 获取或创建会话
     if req.session_id:
@@ -84,90 +94,125 @@ async def chat(
         for r in review_result.scalars().all()
     ]
 
-    # 执行 Agent 状态机
-    # checkpointer 通过 thread_id 自动恢复之前的对话历史
+    # 加载上一轮留下的待作答内容（判题闭环的入口）
+    pending_quiz, pending_review = await load_pending_context(db, session.id)
+
     initial_state = {
         "user_message": req.message,
         "user_id": user.id,
         "session_id": session.id,
         "student_profile": profile_dict,
         "review_items": review_items,
+        "pending_quiz": pending_quiz,
+        "pending_review": pending_review,
     }
+    config = {"configurable": {"thread_id": str(session.id)}}
 
-    final_state = await agent_graph.ainvoke(
-        initial_state,
-        config={"configurable": {"thread_id": str(session.id)}},
-    )
-
-    # 获取回复
-    response_chunks = final_state.get("response_chunks", ["抱歉，我暂时无法回复。"])
-    reply_text = "".join(response_chunks)
-
-    # 如果是题目，也保存 quiz 数据到 metadata
-    metadata = {
-        "intent": final_state.get("intent"),
-        "action": final_state.get("action_plan"),
-    }
-    if final_state.get("quiz_question"):
-        metadata["quiz"] = final_state["quiz_question"]
-    if final_state.get("code_result"):
-        metadata["code_result"] = final_state["code_result"]
-
-    # 保存助手消息
-    db.add(Message(
-        session_id=session.id,
-        role="assistant",
-        content=reply_text,
-        metadata_=metadata,
-    ))
-    session.ended_at = datetime.now()
-    await db.commit()
-
-    # 如果学生学了新概念，用 fsrs 包创建间隔重复卡片
-    if final_state.get("intent") == "learn_concept" and final_state.get("teach_content"):
-        try:
-            from fsrs import Card, Scheduler
-
-            scheduler = Scheduler()
-            card = Card()
-            card, _ = scheduler.review_card(card, rating=3)
-
-            due = card.due
-            if hasattr(due, 'tzinfo') and due.tzinfo:
-                due = due.replace(tzinfo=None)
-
-            db.add(ReviewItem(
-                user_id=user.id,
-                concept=req.message[:200],
-                card_data=card.to_dict(),
-                due=due,
-            ))
-            await db.commit()
-        except Exception:
-            pass
-
-    # SSE 返回 — 分块发送，前端体验更流畅
     async def event_stream():
         # 发送状态提示
-        yield f"data: {json.dumps({'type': 'status', 'content': 'Agent 正在思考...'}, ensure_ascii=False)}\n\n"
+        yield _sse({"type": "status", "content": "Agent 正在思考..."})
 
-        # 分块发送回复（每 80 字一块，模拟流式）
-        chunk_size = 80
-        for i in range(0, len(reply_text), chunk_size):
-            chunk = reply_text[i:i + chunk_size]
-            yield f"data: {json.dumps({'type': 'stream', 'content': chunk}, ensure_ascii=False)}\n\n"
+        final_state: dict = {}
+        try:
+            # 真流式：custom channel 推增量 token，updates channel 汇总各节点产出
+            async for mode, payload in graph_module.agent_graph.astream(
+                initial_state,
+                config=config,
+                stream_mode=["custom", "updates"],
+            ):
+                if mode == "custom":
+                    if isinstance(payload, str) and payload:
+                        yield _sse({"type": "stream", "content": payload})
+                elif mode == "updates" and isinstance(payload, dict):
+                    for delta in payload.values():
+                        if isinstance(delta, dict):
+                            final_state.update(delta)
+        except Exception:
+            logger.exception("Agent 执行失败 session=%s", session.id)
 
-        # 发送完整数据（包含 quiz/code 等结构化数据）
+        reply_chunks = final_state.get("response_chunks") or []
+        reply_text = "".join(reply_chunks) or "抱歉，我暂时无法回复，请稍后重试。"
+
+        judged_summary: dict | None = None
+        quiz_payload = final_state.get("quiz_question")
+        code_payload = final_state.get("code_result")
+        judge_result = final_state.get("judge_result") or {}
+        review_item_id = final_state.get("review_item_id")
+
+        # 判题 / 记忆卡重排 / 新卡片创建 — 全部落库后再发 complete
+        async with async_session() as db2:
+            metadata: dict = {
+                "intent": final_state.get("intent"),
+                "action_plan": final_state.get("action_plan"),
+            }
+            if quiz_payload:
+                metadata["quiz"] = {**quiz_payload, "answered": False}
+            if code_payload:
+                metadata["code_result"] = code_payload
+            if judge_result.get("mode"):
+                metadata["judged"] = {
+                    "mode": judge_result.get("mode"),
+                    "correct": bool(judge_result.get("correct")),
+                }
+                judged_summary = dict(metadata["judged"])
+            if review_item_id:
+                metadata["review_item_id"] = review_item_id
+                metadata["review_concept"] = next(
+                    (r["concept"] for r in review_items if r.get("id") == review_item_id),
+                    "",
+                )
+                metadata["review_answered"] = False
+
+            db2.add(Message(
+                session_id=session.id,
+                role="assistant",
+                content=reply_text,
+                metadata_=metadata,
+            ))
+
+            # 判题发生时：把上一轮待作答消息标记为已作答，并按质量重排 FSRS 卡片
+            prev_message_id = (
+                (pending_quiz or {}).get("_message_id")
+                or (pending_review or {}).get("message_id")
+            )
+            if judge_result.get("mode") and prev_message_id:
+                prev_result = await db2.execute(
+                    select(Message).where(Message.id == prev_message_id)
+                )
+                prev_msg = prev_result.scalar_one_or_none()
+                if prev_msg and prev_msg.metadata_:
+                    updated = dict(prev_msg.metadata_)
+                    updated["answered"] = True
+                    updated["review_answered"] = True
+                    prev_msg.metadata_ = updated
+
+            await apply_fsrs_reschedule(db2, user.id, judge_result)
+
+            # 学生学了新概念 → 创建复习卡（同一概念只建一张）
+            if (final_state.get("intent") == "learn_concept"
+                    and final_state.get("teach_content")):
+                await create_review_card_once(
+                    db2, user.id, req.message[:200]
+                )
+
+            fresh_session = await db2.get(Session, session.id)
+            if fresh_session is not None:
+                fresh_session.ended_at = datetime.now()
+            await db2.commit()
+
+        # 发送完整数据（包含 quiz/code/judged 等结构化数据）
         complete_data: dict = {
             "type": "complete",
             "content": reply_text,
             "session_id": session.id,
         }
-        if final_state.get("quiz_question"):
-            complete_data["quiz"] = final_state["quiz_question"]
-        if final_state.get("code_result"):
-            complete_data["code_result"] = final_state["code_result"]
-        yield f"data: {json.dumps(complete_data, ensure_ascii=False)}\n\n"
+        if quiz_payload:
+            complete_data["quiz"] = quiz_payload
+        if code_payload:
+            complete_data["code_result"] = code_payload
+        if judged_summary:
+            complete_data["judged"] = judged_summary
+        yield _sse(complete_data)
         yield "data: [done]\n\n"
 
     return StreamingResponse(
@@ -179,3 +224,96 @@ async def chat(
             "X-Session-Id": str(session.id),
         },
     )
+
+
+# ── 辅助函数 ──────────────────────────────────────────────
+
+
+async def load_pending_context(db, session_id: int) -> tuple[dict, dict]:
+    """读取该会话最后一条助手消息，还原待作答的 quiz / review。
+
+    返回 (pending_quiz, pending_review)，两者互斥、最多一个生效。
+    """
+    result = await db.execute(
+        select(Message)
+        .where(Message.session_id == session_id, Message.role == "assistant")
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(1)
+    )
+    last_msg = result.scalar_one_or_none()
+    if not last_msg or not last_msg.metadata_:
+        return {}, {}
+
+    md = last_msg.metadata_
+    quiz = md.get("quiz")
+    if isinstance(quiz, dict) and quiz.get("question") and not md.get("answered"):
+        return {**quiz, "_message_id": last_msg.id}, {}
+
+    if md.get("review_item_id") and not md.get("review_answered"):
+        return {}, {
+            "item_id": md["review_item_id"],
+            "concept": md.get("review_concept", ""),
+            "message_id": last_msg.id,
+        }
+    return {}, {}
+
+
+async def apply_fsrs_reschedule(db, user_id: int, judge_result: dict) -> None:
+    """按判题结果重排 FSRS 卡片的下次到期时间"""
+    item_id = judge_result.get("item_id")
+    rating = judge_result.get("rating")
+    if not item_id or rating not in (1, 3):
+        return
+
+    result = await db.execute(
+        select(ReviewItem)
+        .where(ReviewItem.id == int(item_id), ReviewItem.user_id == user_id)
+    )
+    item = result.scalar_one_or_none()
+    if not item or not item.card_data:
+        return
+
+    try:
+        from fsrs import Card, Scheduler
+
+        scheduler = Scheduler()
+        card = Card.from_dict(item.card_data)
+        card, _ = scheduler.review_card(card, rating=int(rating))
+        due = card.due
+        if hasattr(due, "tzinfo") and due.tzinfo:
+            due = due.replace(tzinfo=None)
+        item.card_data = card.to_dict()
+        item.due = due
+    except Exception:
+        logger.warning("FSRS 卡片重排失败 item=%s", item_id, exc_info=True)
+
+
+async def create_review_card_once(db, user_id: int, concept: str) -> None:
+    """为新学的概念创建间隔重复卡片；已有同名概念时跳过"""
+    existing = await db.execute(
+        select(ReviewItem)
+        .where(ReviewItem.user_id == user_id, ReviewItem.concept == concept)
+        .limit(1)
+    )
+    if existing.scalar_one_or_none() is not None:
+        return
+
+    try:
+        from fsrs import Card, Scheduler
+
+        scheduler = Scheduler()
+        card = Card()
+        card, _ = scheduler.review_card(card, rating=3)
+
+        due = card.due
+        if hasattr(due, "tzinfo") and due.tzinfo:
+            due = due.replace(tzinfo=None)
+
+        db.add(ReviewItem(
+            user_id=user_id,
+            concept=concept,
+            card_data=card.to_dict(),
+            due=due,
+        ))
+    except Exception:
+        logger.warning("复习卡片创建失败 concept=%s", concept, exc_info=True)
