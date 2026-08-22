@@ -16,7 +16,7 @@ export default function HomePage() {
             <span className="w-1.5 h-1.5 rounded-full bg-brand-500" /> AI 编程学习 Agent
           </p>
           <h1 className="text-4xl md:text-5xl font-bold text-gray-900 tracking-tight mb-5">
-            EduAgent <span className="text-brand-600">Agent</span>
+            Edu<span className="text-brand-600">Agent</span>
           </h1>
           <p className="text-lg text-gray-500 max-w-2xl mx-auto leading-relaxed mb-8">
             不是平台，不是工具箱。就是一个 Agent——

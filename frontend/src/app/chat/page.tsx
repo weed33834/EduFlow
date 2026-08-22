@@ -11,6 +11,8 @@ import {
   chatStream, sessionAPI,
   type ChatResponseData, type SessionSummary, type CodeResult, type QuizData,
 } from '@/lib/api'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { cn, formatDateTime } from '@/lib/utils'
 
 interface ChatMsg {
@@ -407,9 +409,47 @@ function MessageBubble({ message }: { message: ChatMsg }) {
             : 'glass-card text-gray-700 rounded-tl-sm',
         )}
       >
-        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-          {message.content}
-        </p>
+        {isUser ? (
+          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+            {message.content}
+          </p>
+        ) : (
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            className="text-sm leading-relaxed break-words"
+            components={{
+              pre({ children }) {
+                return <>{children}</>
+              },
+              code({ className, children, ...props }) {
+                const isInline = !className && !String(children).includes('\n')
+                if (isInline) {
+                  return (
+                    <code className="bg-gray-100 text-pink-600 px-1.5 py-0.5 rounded text-xs font-mono" {...props}>
+                      {children}
+                    </code>
+                  )
+                }
+                const codeText = String(children).replace(/\n$/, '')
+                return (
+                  <div className="relative group my-2">
+                    <pre className="bg-gray-900 text-green-400 p-3 rounded-lg text-xs font-mono overflow-x-auto">
+                      <code className={className}>{children}</code>
+                    </pre>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(codeText)}
+                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white transition-all text-xs px-2 py-1 bg-gray-800 rounded"
+                    >
+                      复制
+                    </button>
+                  </div>
+                )
+              },
+            }}
+          >
+            {message.content}
+          </ReactMarkdown>
+        )}
         {/* 代码执行结果卡片 */}
         {message.codeResult && (
           <CodeResultCard result={message.codeResult} />
@@ -435,13 +475,25 @@ function CodeResultCard({ result }: { result: CodeResult }) {
         </span>
       </div>
       {result.stdout && (
-        <div className="bg-gray-900 text-green-400 p-3 rounded-lg text-xs font-mono overflow-x-auto mb-2">
+        <div className="relative group bg-gray-900 text-green-400 p-3 rounded-lg text-xs font-mono overflow-x-auto mb-2">
           <pre className="whitespace-pre-wrap">{result.stdout}</pre>
+          <button
+            onClick={() => navigator.clipboard.writeText(result.stdout)}
+            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white transition-all text-xs px-2 py-1 bg-gray-800 rounded"
+          >
+            复制
+          </button>
         </div>
       )}
       {result.stderr && (
-        <div className="bg-gray-900 text-red-400 p-3 rounded-lg text-xs font-mono overflow-x-auto">
+        <div className="relative group bg-gray-900 text-red-400 p-3 rounded-lg text-xs font-mono overflow-x-auto">
           <pre className="whitespace-pre-wrap">{result.stderr}</pre>
+          <button
+            onClick={() => navigator.clipboard.writeText(result.stderr)}
+            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white transition-all text-xs px-2 py-1 bg-gray-800 rounded"
+          >
+            复制
+          </button>
         </div>
       )}
       {!result.stdout && !result.stderr && (

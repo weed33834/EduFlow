@@ -185,6 +185,25 @@ export const profileAPI = {
     request('/profile', { method: 'PUT', body: JSON.stringify(data) }),
 }
 
+/* ─────────────────── 重试工具 ─────────────────── */
+
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  baseDelay = 1000,
+): Promise<T> {
+  for (let i = 0; i <= maxRetries; i++) {
+    try {
+      return await fn()
+    } catch (err) {
+      if (i === maxRetries) throw err
+      const delay = Math.min(baseDelay * Math.pow(2, i), 10000)
+      await new Promise((r) => setTimeout(r, delay))
+    }
+  }
+  throw new Error('重试次数耗尽')
+}
+
 /* ─────────────────── 对话（SSE 流式） ─────────────────── */
 
 export interface ChatResponseData {
@@ -203,14 +222,14 @@ export async function chatStream(
 ) {
   const token = getToken()
   try {
-    const res = await fetch(`${API_ROOT}/chat`, {
+    const res = await retryWithBackoff(() => fetch(`${API_ROOT}/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ message, session_id: sessionId }),
-    })
+    }))
 
     if (!res.ok || !res.body) {
       const errText = await res.text().catch(() => '')
