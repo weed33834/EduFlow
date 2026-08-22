@@ -223,6 +223,13 @@ async function retryWithBackoff<T>(
 
 /* ─────────────────── 对话（SSE 流式） ─────────────────── */
 
+export interface ToolTraceItem {
+  tool: string
+  round?: number
+  dur_ms?: number
+  ok?: boolean
+}
+
 export interface JudgedSummary {
   mode: 'quiz' | 'review'
   correct: boolean
@@ -238,6 +245,7 @@ export interface ChatResponseData {
   quiz?: QuizData
   code_result?: CodeResult
   judged?: JudgedSummary
+  tool_trace?: ToolTraceItem[]
 }
 
 /* ─────────────────── 幂等键 ─────────────────── */

@@ -5,14 +5,14 @@ import { useRouter } from 'next/navigation'
 import {
   Send, Sparkles, Loader2, Plus, Trash2, MessageSquare,
   LogOut, Menu, X, Brain, Terminal, Square, Copy, Check, RefreshCw, Pencil,
-  ArrowDown, Download, Star, Archive, ArchiveRestore,
+  ArrowDown, Download, Star, Archive, ArchiveRestore, Wrench,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import ThemeToggle from '@/components/ThemeToggle'
 import {
   chatStream, regenerateStream, editResendStream, sessionAPI,
   type ChatResponseData, type SessionSummary, type CodeResult, type QuizData,
-  type JudgedSummary,
+  type JudgedSummary, type ToolTraceItem,
 } from '@/lib/api'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -25,6 +25,7 @@ interface ChatMsg {
   quiz?: QuizData
   codeResult?: CodeResult
   judged?: JudgedSummary
+  toolTrace?: ToolTraceItem[]
   timestamp: number
   error?: boolean
 }
@@ -81,6 +82,7 @@ export default function ChatPage() {
           quiz: (m.metadata?.quiz ?? undefined) as QuizData | undefined,
           codeResult: (m.metadata?.code_result ?? undefined) as CodeResult | undefined,
           judged: (m.metadata?.judged ?? undefined) as JudgedSummary | undefined,
+          toolTrace: (m.metadata?.tool_trace ?? undefined) as ToolTraceItem[] | undefined,
           timestamp: new Date(m.created_at || '').getTime(),
         })),
       )
@@ -132,6 +134,7 @@ export default function ChatPage() {
         quiz: (m.metadata?.quiz ?? undefined) as QuizData | undefined,
         codeResult: (m.metadata?.code_result ?? undefined) as CodeResult | undefined,
         judged: (m.metadata?.judged ?? undefined) as JudgedSummary | undefined,
+          toolTrace: (m.metadata?.tool_trace ?? undefined) as ToolTraceItem[] | undefined,
         timestamp: new Date(m.created_at || '').getTime(),
       })),
       )
@@ -208,6 +211,7 @@ export default function ChatPage() {
                     quiz: data.quiz,
                     codeResult: data.code_result,
                     judged: data.judged,
+                    toolTrace: data.tool_trace,
                     timestamp: assistantTs,
                   }
                 : m,
@@ -321,6 +325,7 @@ export default function ChatPage() {
                     quiz: data.quiz,
                     codeResult: data.code_result,
                     judged: data.judged,
+                    toolTrace: data.tool_trace,
                   }
                 : m,
             ),
@@ -382,7 +387,8 @@ export default function ChatPage() {
             prev.map((m, i) =>
               i === prev.length - 1 && m.role === 'assistant'
                 ? { ...m, content: data.content, quiz: data.quiz,
-                    codeResult: data.code_result, judged: data.judged }
+                    codeResult: data.code_result, judged: data.judged,
+                    toolTrace: data.tool_trace }
                 : m,
             ),
           )
@@ -852,6 +858,7 @@ function MessageBubble({
 }) {
   const isUser = message.role === 'user'
   const [copied, setCopied] = useState(false)
+  const [traceOpen, setTraceOpen] = useState(false)
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content)
@@ -860,6 +867,8 @@ function MessageBubble({
   }
 
   const canEdit = isUser && !!message.id && hasSession && !sending
+  const traceTotalMs =
+    message.toolTrace?.reduce((s, t) => s + (t.dur_ms || 0), 0) ?? 0
 
   return (
     <div className={cn('flex items-start gap-2.5', isUser && 'flex-row-reverse')}>
@@ -994,6 +1003,40 @@ function MessageBubble({
             >
               {message.content}
             </ReactMarkdown>
+          </div>
+        )}
+
+        {/* 工具调用链（agent_loop 产出） */}
+        {!isUser && message.toolTrace && message.toolTrace.length > 0 && (
+          <div className="mt-2 text-xs">
+            <button
+              onClick={() => setTraceOpen(!traceOpen)}
+              className="flex items-center gap-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors select-none"
+            >
+              <Wrench className="w-3 h-3" />
+              工具调用 {message.toolTrace.length} 次 · 共 {traceTotalMs}ms
+              <span className="text-[10px]">{traceOpen ? '▲' : '▼'}</span>
+            </button>
+            {traceOpen && (
+              <ul
+                className="mt-1.5 space-y-0.5 pl-3 border-l-2"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                {message.toolTrace.map((t, i) => (
+                  <li
+                    key={i}
+                    className={cn(
+                      'font-mono text-[11px]',
+                      t.ok === false ? 'text-red-500' : 'text-gray-400',
+                    )}
+                  >
+                    {t.ok === false ? '✗' : '✓'} {t.tool}
+                    {t.round != null && ` · 第${t.round}轮`}
+                    {t.dur_ms != null && ` · ${t.dur_ms}ms`}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 

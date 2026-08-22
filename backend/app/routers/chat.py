@@ -320,6 +320,8 @@ def run_agent_stream(
             complete_data["code_result"] = code_payload
         if judged_summary:
             complete_data["judged"] = judged_summary
+        if final_state.get("tool_trace"):
+            complete_data["tool_trace"] = final_state["tool_trace"]
         yield _sse(complete_data)
         yield "data: [done]\n\n"
 
