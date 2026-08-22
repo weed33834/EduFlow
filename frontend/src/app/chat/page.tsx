@@ -414,9 +414,9 @@ function MessageBubble({ message }: { message: ChatMsg }) {
             {message.content}
           </p>
         ) : (
+          <div className="text-sm leading-relaxed break-words">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
-            className="text-sm leading-relaxed break-words"
             components={{
               pre({ children }) {
                 return <>{children}</>
@@ -449,6 +449,7 @@ function MessageBubble({ message }: { message: ChatMsg }) {
           >
             {message.content}
           </ReactMarkdown>
+          </div>
         )}
         {/* 代码执行结果卡片 */}
         {message.codeResult && (
