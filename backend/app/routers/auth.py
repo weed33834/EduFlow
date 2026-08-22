@@ -1,4 +1,6 @@
 """认证路由 — 保留 EduAgent 原有认证逻辑，改用 SQLAlchemy 2.0 Mapped"""
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,7 +49,7 @@ class UserResponse(BaseModel):
     display_name: str | None
     bio: str | None
     avatar_url: str | None
-    created_at: str | None
+    created_at: datetime | None
 
     class Config:
         from_attributes = True
