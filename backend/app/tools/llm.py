@@ -1,10 +1,18 @@
-"""LLM 统一接口（LiteLLM 封装 — 支持 OpenAI/Claude/Gemini 等 100+ 模型）"""
+"""LLM 统一接口（LiteLLM 封装 — 支持 OpenAI/Claude/Gemini 等 100+ 模型）
+
+可观测性：每次调用记录结构化日志（模型/耗时/输出规模），失败带堆栈。
+generate_json / classify_intent 走 chat_completion，自动获得同样日志。
+"""
 import json
+import logging
+import time
 from typing import AsyncIterator, Callable
 
 import litellm
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 async def chat_completion(
@@ -38,8 +46,25 @@ async def chat_completion(
     if response_format:
         kwargs["response_format"] = response_format
 
-    response = await litellm.acompletion(**kwargs)
-    return response.choices[0].message.content
+    t0 = time.perf_counter()
+    try:
+        response = await litellm.acompletion(**kwargs)
+        content = response.choices[0].message.content
+        logger.info(
+            "llm.call model=%s dur_ms=%.0f out_chars=%d stream=false",
+            settings.LITELLM_MODEL,
+            (time.perf_counter() - t0) * 1000,
+            len(content or ""),
+        )
+        return content
+    except Exception:
+        logger.warning(
+            "llm.call failed model=%s dur_ms=%.0f",
+            settings.LITELLM_MODEL,
+            (time.perf_counter() - t0) * 1000,
+            exc_info=True,
+        )
+        raise
 
 
 async def chat_completion_streaming(
@@ -59,55 +84,41 @@ async def chat_completion_streaming(
         full_messages.append({"role": "system", "content": system_prompt})
     full_messages.extend(messages)
 
-    response = await litellm.acompletion(
-        model=settings.LITELLM_MODEL,
-        messages=full_messages,
-        api_key=settings.LITELLM_API_KEY,
-        api_base=settings.LITELLM_BASE_URL,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        stream=True,
-    )
-    parts: list[str] = []
-    async for chunk in response:
-        delta = chunk.choices[0].delta.content
-        if delta:
-            parts.append(delta)
-            try:
-                on_delta(delta)
-            except Exception:
-                pass
-    return "".join(parts)
-
-
-async def stream_chat(
-    messages: list[dict],
-    system_prompt: str = "",
-    temperature: float = 0.7,
-    max_tokens: int = 2000,
-) -> AsyncIterator[str]:
-    """流式对话，yield 增量文本"""
-    if not settings.llm_available:
-        return
-
-    full_messages: list[dict] = []
-    if system_prompt:
-        full_messages.append({"role": "system", "content": system_prompt})
-    full_messages.extend(messages)
-
-    response = await litellm.acompletion(
-        model=settings.LITELLM_MODEL,
-        messages=full_messages,
-        api_key=settings.LITELLM_API_KEY,
-        api_base=settings.LITELLM_BASE_URL,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        stream=True,
-    )
-    async for chunk in response:
-        delta = chunk.choices[0].delta.content
-        if delta:
-            yield delta
+    t0 = time.perf_counter()
+    try:
+        response = await litellm.acompletion(
+            model=settings.LITELLM_MODEL,
+            messages=full_messages,
+            api_key=settings.LITELLM_API_KEY,
+            api_base=settings.LITELLM_BASE_URL,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
+        parts: list[str] = []
+        async for chunk in response:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                parts.append(delta)
+                try:
+                    on_delta(delta)
+                except Exception:
+                    pass
+        logger.info(
+            "llm.call model=%s dur_ms=%.0f out_chars=%d stream=true",
+            settings.LITELLM_MODEL,
+            (time.perf_counter() - t0) * 1000,
+            len("".join(parts)),
+        )
+        return "".join(parts)
+    except Exception:
+        logger.warning(
+            "llm.call failed stream=true model=%s dur_ms=%.0f",
+            settings.LITELLM_MODEL,
+            (time.perf_counter() - t0) * 1000,
+            exc_info=True,
+        )
+        raise
 
 
 def format_history_for_prompt(history: list[dict] | None, max_turns: int = 6) -> str:
