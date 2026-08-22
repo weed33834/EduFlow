@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="EduAgent",
     description="AI 编程学习 Agent",
-    version="0.5.0",
+    version="0.5.1",
     lifespan=lifespan,
 )
 
@@ -69,4 +69,4 @@ app.include_router(profile.router)
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "0.5.0"}
+    return {"status": "ok", "version": "0.5.1"}

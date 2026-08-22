@@ -11,6 +11,7 @@ from typing import AsyncIterator, Callable
 import litellm
 
 from app.config import settings
+from app.tools.tracing import record_span
 
 logger = logging.getLogger(__name__)
 
@@ -67,19 +68,29 @@ async def chat_completion(
     try:
         response = await litellm.acompletion(**kwargs)
         content = response.choices[0].message.content
+        dur = (time.perf_counter() - t0) * 1000
         logger.info(
             "llm.call model=%s dur_ms=%.0f out_chars=%d stream=false",
             settings.LITELLM_MODEL,
-            (time.perf_counter() - t0) * 1000,
+            dur,
             len(content or ""),
         )
+        record_span(
+            "llm.call", model=settings.LITELLM_MODEL, dur_ms=dur,
+            out_chars=len(content or ""), stream=False,
+        )
         return content
-    except Exception:
+    except Exception as exc:
+        dur = (time.perf_counter() - t0) * 1000
         logger.warning(
             "llm.call failed model=%s dur_ms=%.0f",
             settings.LITELLM_MODEL,
-            (time.perf_counter() - t0) * 1000,
+            dur,
             exc_info=True,
+        )
+        record_span(
+            "llm.call", model=settings.LITELLM_MODEL, dur_ms=dur,
+            stream=False, ok=False, error=str(exc),
         )
         raise
 
@@ -121,19 +132,29 @@ async def chat_completion_streaming(
                     on_delta(delta)
                 except Exception:
                     pass
+        dur = (time.perf_counter() - t0) * 1000
         logger.info(
             "llm.call model=%s dur_ms=%.0f out_chars=%d stream=true",
             settings.LITELLM_MODEL,
-            (time.perf_counter() - t0) * 1000,
+            dur,
             len("".join(parts)),
         )
+        record_span(
+            "llm.call", model=settings.LITELLM_MODEL, dur_ms=dur,
+            out_chars=len("".join(parts)), stream=True,
+        )
         return "".join(parts)
-    except Exception:
+    except Exception as exc:
+        dur = (time.perf_counter() - t0) * 1000
         logger.warning(
             "llm.call failed stream=true model=%s dur_ms=%.0f",
             settings.LITELLM_MODEL,
-            (time.perf_counter() - t0) * 1000,
+            dur,
             exc_info=True,
+        )
+        record_span(
+            "llm.call", model=settings.LITELLM_MODEL, dur_ms=dur,
+            stream=True, ok=False, error=str(exc),
         )
         raise
 

@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     # 未安装 SDK 时 litellm 会在调用期报错——留空即完全关闭。
     LITELLM_SUCCESS_CALLBACK: str = ""
 
+    # 本地追踪（默认开启）：LLM 调用 span 追加到 TRACE_DIR/traces.jsonl，
+    # 用 scripts/view_traces.py 查看。零依赖零账号。
+    TRACE_ENABLED: bool = True
+    TRACE_DIR: str = "logs"
+
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"
 

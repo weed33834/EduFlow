@@ -27,6 +27,7 @@ from app.models import User, Session, Message, StudentProfile, ReviewItem
 from app.agents import graph as graph_module
 from app.config import settings
 from app.ratelimit import SlidingWindowLimiter, build_limiter
+from app.tools.tracing import new_trace_id, session_id_var, trace_id_var
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,10 @@ async def chat(
         "pending_review": pending_review,
     }
     config = {"configurable": {"thread_id": str(session.id)}}
+
+    # 追踪上下文：本次请求的所有 LLM span 关联到同一 trace
+    trace_id_var.set(new_trace_id())
+    session_id_var.set(session.id)
 
     async def event_stream():
         # 发送状态提示
