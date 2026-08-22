@@ -332,20 +332,24 @@ async def teach(state: AgentState) -> AgentState:
     return {**state, "teach_content": content}
 
 
+async def generate_quiz_payload(topic: str, level: str = "beginner") -> dict:
+    """生成一道选择题（quiz 节点与 agent_loop 的 create_quiz 工具共用）"""
+    if settings.llm_available:
+        prompt = f"请围绕以下主题出 1 道选择题。学生水平：{level}\n主题/要求：{topic}"
+        question = await generate_json(prompt, system_prompt=QUIZ_PROMPT)
+        if question and "question" in question:
+            return question
+    return _quiz_fallback(topic)
+
+
 async def quiz(state: AgentState) -> AgentState:
     """出题"""
     message = state["user_message"]
     profile = state.get("student_profile", {})
     level = profile.get("current_level", "beginner")
-
-    if settings.llm_available:
-        prompt = f"请围绕以下主题出 1 道选择题。学生水平：{level}\n主题/要求：{message}"
-        question = await generate_json(prompt, system_prompt=QUIZ_PROMPT)
-        if not question or "question" not in question:
-            question = _quiz_fallback(message)
-    else:
-        question = _quiz_fallback(message)
-
+    question = await generate_quiz_payload(
+        topic=message, level=str(level),
+    )
     return {**state, "quiz_question": question}
 
 
