@@ -282,6 +282,20 @@ async def judge(state: AgentState) -> AgentState:
     return {**state, "action_plan": "respond"}
 
 
+def _recent_messages(history: list[dict], exclude_last: bool = True,
+                     max_entries: int = 6) -> list[dict]:
+    """取最近的合法对话条目（role+content 齐全），供 LLM 消息构造使用。
+
+    teach/respond 共用，避免两处各写一份截取循环。
+    """
+    entries = history[:-1] if exclude_last else history
+    messages: list[dict] = []
+    for h in entries[-max_entries:]:
+        if h.get("role") and h.get("content"):
+            messages.append({"role": h["role"], "content": str(h["content"])})
+    return messages
+
+
 async def teach(state: AgentState) -> AgentState:
     """讲解概念"""
     message = state["user_message"]
@@ -290,10 +304,7 @@ async def teach(state: AgentState) -> AgentState:
     history = state.get("history", [])
 
     # 构造带历史的消息（排除当前消息，由 understand 节点加入）
-    messages: list[dict] = []
-    for h in history[:-1][-6:]:  # 最近 3 轮，排除当前用户消息
-        if h.get("role") and h.get("content"):
-            messages.append({"role": h["role"], "content": str(h["content"])})
+    messages: list[dict] = _recent_messages(history, exclude_last=True, max_entries=6)
 
     # 加入知识库上下文（如果有）
     knowledge = state.get("knowledge_context", [])
@@ -417,10 +428,7 @@ async def respond(state: AgentState) -> AgentState:
     else:
         message = state["user_message"]
         history = state.get("history", [])
-        messages: list[dict] = []
-        for h in history[:-1][-6:]:
-            if h.get("role") and h.get("content"):
-                messages.append({"role": h["role"], "content": str(h["content"])})
+        messages: list[dict] = _recent_messages(history, exclude_last=True, max_entries=6)
         messages.append({"role": "user", "content": message})
 
         if settings.llm_available:
