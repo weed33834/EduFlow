@@ -69,6 +69,26 @@ export default function ChatPage() {
     setShowScrollBtn(!nearBottom)
   }, [])
 
+  // 用服务端数据刷新当前会话消息（拿回 DB id 与最新状态）
+  const refreshThread = useCallback(async (sid: number) => {
+    try {
+      const detail = await sessionAPI.get(sid)
+      setMessages(
+        detail.messages.map((m) => ({
+          id: m.id,
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+          quiz: (m.metadata?.quiz ?? undefined) as QuizData | undefined,
+          codeResult: (m.metadata?.code_result ?? undefined) as CodeResult | undefined,
+          judged: (m.metadata?.judged ?? undefined) as JudgedSummary | undefined,
+          timestamp: new Date(m.created_at || '').getTime(),
+        })),
+      )
+    } catch {
+      /* best effort */
+    }
+  }, [])
+
   // 加载会话列表（按当前标签：全部 / 归档）
   const loadSessions = useCallback(async () => {
     try {
@@ -161,6 +181,7 @@ export default function ChatPage() {
 
       const controller = new AbortController()
       abortRef.current = controller
+      let latestSid = activeSessionId // 回调内更新，完成后用于回读 DB id
 
       await chatStream(
         trimmed,
@@ -193,6 +214,7 @@ export default function ChatPage() {
             ),
           )
           if (data.session_id && !activeSessionId) {
+            latestSid = data.session_id
             setActiveSessionId(data.session_id)
           }
         },
@@ -214,11 +236,13 @@ export default function ChatPage() {
       )
 
       abortRef.current = null
+      // 回读 DB：让本轮消息拿到 id，编辑/重新生成等操作立即可用
+      if (latestSid) await refreshThread(latestSid)
       loadSessions()
       setSending(false)
       inputRef.current?.focus()
     },
-    [sending, activeSessionId, loadSessions],
+    [sending, activeSessionId, loadSessions, refreshThread],
   )
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -262,26 +286,6 @@ export default function ChatPage() {
       /* best effort */
     }
   }, [editingId, editValue])
-
-  // 用服务端数据刷新当前会话消息（拿回 DB id 与最新状态）
-  const refreshThread = useCallback(async (sid: number) => {
-    try {
-      const detail = await sessionAPI.get(sid)
-      setMessages(
-        detail.messages.map((m) => ({
-          id: m.id,
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-          quiz: (m.metadata?.quiz ?? undefined) as QuizData | undefined,
-          codeResult: (m.metadata?.code_result ?? undefined) as CodeResult | undefined,
-          judged: (m.metadata?.judged ?? undefined) as JudgedSummary | undefined,
-          timestamp: new Date(m.created_at || '').getTime(),
-        })),
-      )
-    } catch {
-      /* best effort */
-    }
-  }, [])
 
   // v0.6.0 重新生成最后一轮回复
   const handleRegenerate = useCallback(async () => {
