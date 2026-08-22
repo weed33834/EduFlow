@@ -110,19 +110,45 @@ async def stream_chat(
             yield delta
 
 
-async def classify_intent(message: str) -> str:
-    """意图分类，返回标签（LiteLLM JSON mode 保证输出可靠）"""
-    prompt = f"""判断学生意图，返回 JSON：
+def format_history_for_prompt(history: list[dict] | None, max_turns: int = 6) -> str:
+    """把最近几轮对话压成纯文本上下文块（多轮意图分类用）。
+
+    纯函数：空历史返回空串；只保留有 role+content 的条目。
+    """
+    if not history:
+        return ""
+    lines: list[str] = []
+    for h in history[-max_turns:]:
+        role = h.get("role")
+        content = h.get("content")
+        if not role or not content:
+            continue
+        who = "学生" if role == "user" else "助手"
+        text = str(content).replace("\n", " ")[:120]
+        lines.append(f"{who}：{text}")
+    return "\n".join(lines)
+
+
+async def classify_intent(message: str, history: list[dict] | None = None) -> str:
+    """意图分类，返回标签（LiteLLM JSON mode 保证输出可靠）
+
+    history: 当前消息之前的最近几轮对话，用于消解指代
+    （如上一轮在讲递归时，"为什么不会栈溢出"应归入 ask_question 而非 chitchat）。
+    """
+    context_block = format_history_for_prompt(history)
+    context_section = f"\n\n最近对话（供参考，可能存在指代）：\n{context_block}\n" if context_block else ""
+
+    prompt = f"""判断学生最新一条消息的意图，返回 JSON：
 {{"intent": "learn_concept" 或 "practice" 或 "run_code" 或 "ask_question" 或 "chitchat"}}
 
 规则：
 - learn_concept: 学新概念（如"什么是递归"）
 - practice: 想练习（如"给我出几道题"）
 - run_code: 想运行代码（消息包含代码块，如 def/print/import，或说"运行这段代码"）
-- ask_question: 答疑（如"为什么这里报错"）
+- ask_question: 答疑或对上文追问（如"为什么这里报错""继续""那第二点呢"）
 - chitchat: 闲聊（如"你好"）
-
-学生消息：{message}"""
+结合最近对话判断指代与省略。{context_section}
+学生最新消息：{message}"""
 
     result = await chat_completion(
         [{"role": "user", "content": prompt}],

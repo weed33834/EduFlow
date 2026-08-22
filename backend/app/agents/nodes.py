@@ -100,6 +100,20 @@ _ANSWER_LETTER_RE = re.compile(r"^\s*(?:答案(?:是|为)?|选(?:择)?|我的答
 _ANSWER_LETTER_BARE_RE = re.compile(r"^\s*([A-Da-d])\s*[.。!！]?\s*$")
 
 
+def keyword_intent(message: str) -> str:
+    """降级意图分类：关键词匹配（无 LLM 时使用，也是评估集的基线）"""
+    msg = message.lower()
+    if any(k in msg for k in ["def ", "print(", "import ", "class ", "console.log"]):
+        return "run_code"
+    if any(k in msg for k in ["什么是", "解释", "讲解", "原理", "怎么理解"]):
+        return "learn_concept"
+    if any(k in msg for k in ["出题", "练习", "题目", "考考", "quiz", "题"]):
+        return "practice"
+    if any(k in msg for k in ["你好", "hi", "hello", "嘿", "hey"]):
+        return "chitchat"
+    return "ask_question"
+
+
 def parse_choice_answer(text: str) -> int | None:
     """从学生消息中解析选择题作答（0-3），解析失败返回 None。"""
     stripped = text.strip()
@@ -113,25 +127,16 @@ def parse_choice_answer(text: str) -> int | None:
 # ── 节点实现 ──────────────────────────────────────────────
 
 async def understand(state: AgentState) -> AgentState:
-    """理解学生意图"""
+    """理解学生意图（带最近对话上下文，消解指代）"""
     message = state["user_message"]
+    prior_history = state.get("history", [])
 
     if settings.llm_available:
-        # classify_intent 用 LiteLLM JSON mode 返回干净标签，无需手动规范化
-        intent = await classify_intent(message)
+        # classify_intent 用 LiteLLM JSON mode 返回干净标签；传入历史以处理"继续/那第二点呢"
+        intent = await classify_intent(message, history=prior_history)
     else:
         # 降级：关键词匹配
-        msg = message.lower()
-        if any(k in msg for k in ["def ", "print(", "import ", "class ", "console.log"]):
-            intent = "run_code"
-        elif any(k in msg for k in ["什么是", "解释", "讲解", "原理", "怎么理解"]):
-            intent = "learn_concept"
-        elif any(k in msg for k in ["出题", "练习", "题目", "考考", "quiz", "题"]):
-            intent = "practice"
-        elif any(k in msg for k in ["你好", "hi", "hello", "嘿", "hey"]):
-            intent = "chitchat"
-        else:
-            intent = "ask_question"
+        intent = keyword_intent(message)
 
     # 把当前用户消息加入历史（由 LangGraph Checkpointer 自动持久化）
     history = state.get("history", [])
