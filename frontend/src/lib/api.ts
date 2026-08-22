@@ -197,6 +197,8 @@ async function retryWithBackoff<T>(
     try {
       return await fn()
     } catch (err) {
+      // 用户主动取消不重试
+      if (err instanceof DOMException && err.name === 'AbortError') throw err
       if (i === maxRetries) throw err
       const delay = Math.min(baseDelay * Math.pow(2, i), 10000)
       await new Promise((r) => setTimeout(r, delay))
@@ -220,6 +222,7 @@ export async function chatStream(
   sessionId: number | null,
   onEvent: (data: ChatResponseData) => void,
   onError: (err: Error) => void,
+  signal?: AbortSignal,
 ) {
   const token = getToken()
   try {
@@ -230,6 +233,7 @@ export async function chatStream(
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ message, session_id: sessionId }),
+      signal,
     }))
 
     if (!res.ok || !res.body) {
@@ -267,6 +271,7 @@ export async function chatStream(
       }
     }
   } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') return
     onError(err instanceof Error ? err : new Error('对话失败'))
   }
 }

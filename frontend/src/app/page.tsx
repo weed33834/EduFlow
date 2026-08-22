@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext'
-import { Sparkles, Code, Brain, ArrowRight, Github } from 'lucide-react'
+import { Sparkles, Code, Brain, ArrowRight } from 'lucide-react'
 
 export default function HomePage() {
   const { user } = useAuth()

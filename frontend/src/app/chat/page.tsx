@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Send, Sparkles, Loader2, Plus, Trash2, MessageSquare,
-  LogOut, Menu, X, Brain, Terminal,
+  LogOut, Menu, X, Brain, Terminal, Square, Copy, Check, RefreshCw,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import {
@@ -21,6 +21,7 @@ interface ChatMsg {
   quiz?: QuizData
   codeResult?: CodeResult
   timestamp: number
+  error?: boolean
 }
 
 export default function ChatPage() {
@@ -37,6 +38,7 @@ export default function ChatPage() {
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   // 加载会话列表
   const loadSessions = useCallback(async () => {
@@ -59,6 +61,14 @@ export default function ChatPage() {
     const el = scrollRef.current
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [messages, sending])
+
+  // textarea 自动增高
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 128) + 'px'
+  }, [input])
 
   const handleSelectSession = useCallback(async (id: number) => {
     setActiveSessionId(id)
@@ -86,41 +96,47 @@ export default function ChatPage() {
     inputRef.current?.focus()
   }, [])
 
+  const handleStop = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort()
+      abortRef.current = null
+    }
+    setSending(false)
+  }, [])
+
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, retryTs?: number) => {
       const trimmed = text.trim()
       if (!trimmed || sending) return
 
       setInput('')
       setSending(true)
 
-      // 乐观添加用户消息
-      const userTs = Date.now()
-      const userMsg: ChatMsg = {
-        role: 'user',
-        content: trimmed,
-        timestamp: userTs,
+      const userTs = retryTs || Date.now()
+      const assistantTs = userTs + 1
+
+      // 如果是重试，替换错误消息；否则添加新消息
+      if (retryTs) {
+        setMessages((prev) => prev.map((m) =>
+          m.timestamp === retryTs + 1
+            ? { role: 'assistant', content: '', timestamp: assistantTs }
+            : m,
+        ))
+      } else {
+        const userMsg: ChatMsg = { role: 'user', content: trimmed, timestamp: userTs }
+        const assistantMsg: ChatMsg = { role: 'assistant', content: '', timestamp: assistantTs }
+        setMessages((prev) => [...prev, userMsg, assistantMsg])
       }
 
-      // 助手占位消息
-      const assistantTs = userTs + 1
-      const assistantMsg: ChatMsg = {
-        role: 'assistant',
-        content: '',
-        timestamp: assistantTs,
-      }
-      setMessages((prev) => [...prev, userMsg, assistantMsg])
+      const controller = new AbortController()
+      abortRef.current = controller
 
       await chatStream(
         trimmed,
         activeSessionId,
         (data: ChatResponseData) => {
-          if (data.type === 'status') {
-            // 状态提示 — 不更新消息内容，thinking 指示器会自动显示
-            return
-          }
+          if (data.type === 'status') return
           if (data.type === 'stream') {
-            // 流式文本 — 追加到消息内容
             setMessages((prev) =>
               prev.map((m) =>
                 m.timestamp === assistantTs
@@ -130,7 +146,7 @@ export default function ChatPage() {
             )
             return
           }
-          // type === 'complete' — 设置最终内容 + 元数据
+          // type === 'complete'
           setMessages((prev) =>
             prev.map((m) =>
               m.timestamp === assistantTs
@@ -154,16 +170,18 @@ export default function ChatPage() {
               m.timestamp === assistantTs
                 ? {
                     role: 'assistant',
-                    content: `出错了：${err.message}`,
+                    content: err.message,
                     timestamp: assistantTs,
+                    error: true,
                   }
                 : m,
             ),
           )
         },
+        controller.signal,
       )
 
-      // 刷新会话列表
+      abortRef.current = null
       loadSessions()
       setSending(false)
       inputRef.current?.focus()
@@ -339,7 +357,11 @@ export default function ChatPage() {
           ) : (
             messages.map((msg, i) => (
               msg.content || msg.role === 'user' ? (
-                <MessageBubble key={i} message={msg} />
+                <MessageBubble
+                  key={i}
+                  message={msg}
+                  onRetry={msg.error ? () => sendMessage(msg.content, msg.timestamp - 1) : undefined}
+                />
               ) : null
             ))
           )}
@@ -371,13 +393,23 @@ export default function ChatPage() {
               style={{ minHeight: '48px' }}
               disabled={sending}
             />
-            <button
-              onClick={() => sendMessage(input)}
-              disabled={!input.trim() || sending}
-              className="btn-primary !px-4 !py-3 flex-shrink-0"
-            >
-              <Send className="w-4 h-4" />
-            </button>
+            {sending ? (
+              <button
+                onClick={handleStop}
+                className="btn-secondary !px-4 !py-3 flex-shrink-0"
+                title="停止生成"
+              >
+                <Square className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                onClick={() => sendMessage(input)}
+                disabled={!input.trim()}
+                className="btn-primary !px-4 !py-3 flex-shrink-0"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            )}
           </div>
           <p className="text-xs text-gray-300 mt-1.5 text-center">
             按 Enter 发送，Shift + Enter 换行
@@ -390,8 +422,22 @@ export default function ChatPage() {
 
 /* ─────────────────── 消息气泡 ─────────────────── */
 
-function MessageBubble({ message }: { message: ChatMsg }) {
+function MessageBubble({
+  message,
+  onRetry,
+}: {
+  message: ChatMsg
+  onRetry?: () => void
+}) {
   const isUser = message.role === 'user'
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(message.content)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   return (
     <div className={cn('flex items-start gap-2.5', isUser && 'flex-row-reverse')}>
       {isUser ? (
@@ -405,9 +451,11 @@ function MessageBubble({ message }: { message: ChatMsg }) {
       )}
       <div
         className={cn(
-          'px-4 py-3 rounded-2xl max-w-[75%] animate-fade-in',
+          'px-4 py-3 rounded-2xl max-w-[75%] animate-fade-in group',
           isUser
             ? 'bg-brand-600 text-white rounded-tr-sm'
+            : message.error
+            ? 'glass-card text-red-600 rounded-tl-sm'
             : 'glass-card text-gray-700 rounded-tl-sm',
         )}
       >
@@ -415,44 +463,72 @@ function MessageBubble({ message }: { message: ChatMsg }) {
           <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
             {message.content}
           </p>
+        ) : message.error ? (
+          <div className="flex items-center gap-2">
+            <p className="text-sm leading-relaxed">{message.content}</p>
+            {onRetry && (
+              <button
+                onClick={onRetry}
+                className="p-1 text-gray-400 hover:text-brand-600 transition-colors"
+                title="重试"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         ) : (
           <div className="text-sm leading-relaxed break-words">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              pre({ children }) {
-                return <>{children}</>
-              },
-              code({ className, children, ...props }) {
-                const isInline = !className && !String(children).includes('\n')
-                if (isInline) {
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                pre({ children }) {
+                  return <>{children}</>
+                },
+                code({ className, children, ...props }) {
+                  const isInline = !className && !String(children).includes('\n')
+                  if (isInline) {
+                    return (
+                      <code className="bg-gray-100 text-pink-600 px-1.5 py-0.5 rounded text-xs font-mono" {...props}>
+                        {children}
+                      </code>
+                    )
+                  }
+                  const codeText = String(children).replace(/\n$/, '')
                   return (
-                    <code className="bg-gray-100 text-pink-600 px-1.5 py-0.5 rounded text-xs font-mono" {...props}>
-                      {children}
-                    </code>
+                    <div className="relative group/code my-2">
+                      <pre className="bg-gray-900 text-green-400 p-3 rounded-lg text-xs font-mono overflow-x-auto">
+                        <code className={className}>{children}</code>
+                      </pre>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(codeText)}
+                        className="absolute top-2 right-2 opacity-0 group-hover/code:opacity-100 text-gray-400 hover:text-white transition-all text-xs px-2 py-1 bg-gray-800 rounded"
+                      >
+                        复制
+                      </button>
+                    </div>
                   )
-                }
-                const codeText = String(children).replace(/\n$/, '')
-                return (
-                  <div className="relative group my-2">
-                    <pre className="bg-gray-900 text-green-400 p-3 rounded-lg text-xs font-mono overflow-x-auto">
-                      <code className={className}>{children}</code>
-                    </pre>
-                    <button
-                      onClick={() => navigator.clipboard.writeText(codeText)}
-                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white transition-all text-xs px-2 py-1 bg-gray-800 rounded"
-                    >
-                      复制
-                    </button>
-                  </div>
-                )
-              },
-            }}
-          >
-            {message.content}
-          </ReactMarkdown>
+                },
+              }}
+            >
+              {message.content}
+            </ReactMarkdown>
           </div>
         )}
+
+        {/* 助手消息整条复制按钮 */}
+        {!isUser && !message.error && message.content && (
+          <button
+            onClick={handleCopy}
+            className="mt-1 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            {copied ? (
+              <><Check className="w-3 h-3" /> 已复制</>
+            ) : (
+              <><Copy className="w-3 h-3" /> 复制</>
+            )}
+          </button>
+        )}
+
         {/* 代码执行结果卡片 */}
         {message.codeResult && (
           <CodeResultCard result={message.codeResult} />
