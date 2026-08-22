@@ -13,6 +13,7 @@
 - Mem0：长期记忆（开源）
 - fsrs：间隔重复（开源）
 """
+import logging
 import re
 
 from langgraph.config import get_stream_writer
@@ -25,6 +26,8 @@ from app.tools.llm import (
     generate_json,
 )
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 # ── 系统提示词 ──────────────────────────────────────────────
 
@@ -162,7 +165,7 @@ async def recall(state: AgentState) -> AgentState:
         from app.tools.memory import search_memory
         memories = await search_memory(user_id, message)
     except Exception:
-        pass
+        logger.warning("recall: Mem0 检索失败", exc_info=True)
 
     # 从 Qdrant 知识库检索相关文档
     knowledge = []
@@ -170,7 +173,7 @@ async def recall(state: AgentState) -> AgentState:
         from app.tools.knowledge import search_knowledge
         knowledge = await search_knowledge(message)
     except Exception:
-        pass
+        logger.warning("recall: 知识库检索失败", exc_info=True)
 
     return {
         **state,
@@ -446,7 +449,7 @@ async def reflect(state: AgentState) -> AgentState:
             from app.tools.memory import add_memory
             await add_memory(user_id, f"学生问：{message}\n助手答：{reply}")
         except Exception:
-            pass
+            logger.warning("reflect: Mem0 写入失败", exc_info=True)
 
     return state
 
