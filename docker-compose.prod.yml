@@ -1,0 +1,53 @@
+# 生产部署覆盖示例：docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# 与开发版差异：
+# 1. PostgreSQL / Qdrant / Redis 不映射宿主机端口（仅内部网络可达）
+# 2. 数据库口令走环境变量（必须设置 POSTGRES_PASSWORD，禁止默认口令）
+# 3. backend 不直接对外——由反向代理（Caddy/Nginx）按域名转发 API 与前端
+#
+# 必需环境变量（写入 .env，勿提交）：
+#   POSTGRES_PASSWORD   强随机口令
+#   JWT_SECRET          强随机密钥（production 模式下弱值会拒绝启动）
+#   LITELLM_API_KEY     模型服务密钥（production 模式必填）
+# 可选：
+#   LITELLM_SUCCESS_CALLBACK=langfuse   开启外部追踪（需自行安装 SDK 镜像层）
+#   REDIS_URL=redis://redis:6379/0      分布式限流
+
+services:
+  postgres:
+    ports: []                      # 不对宿主机暴露
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    restart: unless-stopped
+
+  qdrant:
+    ports: []
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # 仅内网；如需密码再加 --requirepass 并同步 REDIS_URL
+
+  backend:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://eduagent:${POSTGRES_PASSWORD}@postgres:5432/eduagent
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
+      ENV: production                # 弱配置 fail-fast 生效
+      CORS_ORIGINS: ${PUBLIC_ORIGIN:-https://localhost:3000}
+      REDIS_URL: redis://redis:6379/0
+    ports: []
+    depends_on:
+      postgres: { condition: service_healthy }
+      qdrant: { condition: service_started }
+      redis: { condition: service_started }
+    restart: unless-stopped
+
+  frontend:
+    environment:
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-https://api.example.com}
+    ports:
+      - "127.0.0.1:3000:3000"        # 只绑本机回环，交给反代对外
+    depends_on: [backend]
+    restart: unless-stopped

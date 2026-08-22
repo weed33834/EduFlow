@@ -162,6 +162,16 @@ pytest   # 全离线可跑（外部服务均 mock/降级）
 | v0.4.x | Agent 核心闭环：判题节点 + FSRS 按质重排 + 真增量流式 + PostgresSaver 持久化 + 知识库摄入 + 画像回写 + 限流 + 追踪日志 + 评估集 | ✅ 已完成 |
 | v0.5.0 | 前端打磨（移动端适配 + 深色模式）+ LangSmith/Langfuse 外部追踪 + Redis 分布式限流 | 📋 计划 |
 
+## 生产部署
+
+```bash
+cp .env.example .env   # 填入 POSTGRES_PASSWORD / JWT_SECRET / LITELLM_API_KEY
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+生产覆盖（`docker-compose.prod.yml`）：数据库/向量库/Redis 不暴露宿主机端口；
+`ENV=production` 下弱 JWT 密钥或缺 LLM key 会拒绝启动；前端只绑回环交给反代。
+
 ## License
 
 MIT
