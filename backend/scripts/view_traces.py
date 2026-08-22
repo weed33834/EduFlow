@@ -37,19 +37,15 @@ def load_spans(trace_dir: str, session_id: int | None):
     return spans
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="查看 EduAgent 本地 LLM 追踪")
-    parser.add_argument("--session", type=int, default=None, help="按会话 ID 过滤")
-    parser.add_argument("-n", type=int, default=20, help="显示最近 N 条 trace")
-    parser.add_argument("--dir", default=settings.TRACE_DIR, help="追踪目录")
-    args = parser.parse_args()
-
-    spans = load_spans(args.dir, args.session)
+def print_recent(session_id: int | None = None, n: int = 20,
+                 trace_dir: str | None = None) -> int:
+    """按 trace 聚合打印最近 n 条调用链，返回打印的 trace 数"""
+    spans = load_spans(trace_dir or settings.TRACE_DIR, session_id)
     by_trace: dict[str, list[dict]] = defaultdict(list)
     for s in spans:
         by_trace[s.get("trace_id", "detached")].append(s)
 
-    traces = list(by_trace.items())[-args.n:]
+    traces = list(by_trace.items())[-n:]
     for trace_id, items in reversed(traces):  # 最新在前
         session = items[0].get("session_id") or "-"
         total_ms = sum(i.get("dur_ms") or 0 for i in items)
@@ -66,7 +62,17 @@ def main() -> None:
             if i.get("error"):
                 line += f"\n     错误: {i['error']}"
             print(line)
+    return len(traces)
 
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="查看 EduAgent 本地 LLM 追踪")
+    parser.add_argument("--session", type=int, default=None)
+    parser.add_argument("-n", type=int, default=20)
+    parser.add_argument("--dir", default=settings.TRACE_DIR)
+    args = parser.parse_args()
+    print_recent(args.session, args.n, args.dir)
 
 if __name__ == "__main__":
     main()
+

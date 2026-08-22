@@ -125,7 +125,15 @@ RAG 需要先把文档灌进 Qdrant：
 
 ```bash
 cd backend
-python scripts/ingest_knowledge.py --dir ../docs --pattern "**/*.md"
+python scripts/cli.py ingest --dir ../docs --pattern "**/*.md"
+```
+
+## 管理 CLI
+
+```bash
+python scripts/cli.py stats                          # 用户/会话/消息/复习卡统计
+python scripts/cli.py traces --session 42            # 查看 LLM 调用链
+python scripts/cli.py create-user --email a@b.c --username alice --password ****
 ```
 
 ## 可观测性与限流
@@ -136,8 +144,8 @@ python scripts/ingest_knowledge.py --dir ../docs --pattern "**/*.md"
 
 ```bash
 cd backend
-python scripts/view_traces.py               # 最近 20 条调用链
-python scripts/view_traces.py --session 42  # 按会话过滤
+python scripts/cli.py traces               # 最近 20 条调用链
+python scripts/cli.py traces --session 42  # 按会话过滤
 ```
 
 **外部面板（可选增强）**
