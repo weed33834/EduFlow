@@ -41,6 +41,8 @@ chat_limiter = build_limiter(
 class ChatRequest(BaseModel):
     message: str
     session_id: int | None = None
+    # 幂等键：客户端为每次发送生成唯一 ID；同键重复请求不重复入库、直接回放上次回复
+    request_id: str | None = None
 
 
 def _sse(payload: dict) -> str:
@@ -74,16 +76,24 @@ async def chat(
         session = result.scalar_one_or_none()
         if not session:
             raise HTTPException(status_code=404, detail="会话不存在")
+
+        # 幂等检查：同 request_id 的重复请求直接回放上次回复，不再入库/再跑 Agent
+        if req.request_id:
+            replay = await find_duplicate_request(db, session.id, req.request_id)
+            if replay is not None:
+                return replay_response(session.id, replay)
     else:
         session = Session(user_id=user.id)
         db.add(session)
         await db.flush()
 
     # 保存用户消息（给前端展示用，Agent 历史由 checkpointer 管）
+    user_metadata = {"request_id": req.request_id} if req.request_id else {}
     db.add(Message(
         session_id=session.id,
         role="user",
         content=req.message,
+        metadata_=user_metadata,
     ))
     await db.commit()
 
@@ -255,6 +265,55 @@ async def chat(
 
 
 # ── 辅助函数 ──────────────────────────────────────────────
+
+
+async def find_duplicate_request(db, session_id: int, request_id: str) -> str | None:
+    """按幂等键查重：返回上次回复内容（无重复则 None）"""
+    result = await db.execute(
+        select(Message)
+        .where(
+            Message.session_id == session_id,
+            Message.role == "user",
+            Message.metadata_["request_id"].as_string() == request_id,
+        )
+        .limit(1)
+    )
+    user_msg = result.scalar_one_or_none()
+    if not user_msg:
+        return None
+
+    reply_result = await db.execute(
+        select(Message)
+        .where(
+            Message.session_id == session_id,
+            Message.role == "assistant",
+            Message.id > user_msg.id,
+        )
+        .order_by(Message.id.asc())
+        .limit(1)
+    )
+    reply = reply_result.scalar_one_or_none()
+    return reply.content if reply else ""
+
+
+def replay_response(session_id: int, content: str) -> StreamingResponse:
+    """幂等命中：回放上次回复，不产生任何新数据"""
+
+    async def replay_stream():
+        yield _sse({"type": "status", "content": "重复请求，已回放上次回复"})
+        yield _sse({
+            "type": "complete",
+            "content": content,
+            "session_id": session_id,
+            "duplicate": True,
+        })
+        yield "data: [done]\n\n"
+
+    return StreamingResponse(
+        replay_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Session-Id": str(session_id)},
+    )
 
 
 async def load_pending_context(db, session_id: int) -> tuple[dict, dict]:

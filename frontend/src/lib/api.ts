@@ -223,6 +223,16 @@ export interface ChatResponseData {
   judged?: JudgedSummary
 }
 
+/* ─────────────────── 幂等键 ─────────────────── */
+
+export function newRequestId(): string {
+  // crypto.randomUUID 仅在安全上下文可用；局域网 http 部署时回退
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`
+}
+
 export async function chatStream(
   message: string,
   sessionId: number | null,
@@ -231,6 +241,7 @@ export async function chatStream(
   signal?: AbortSignal,
 ) {
   const token = getToken()
+  const requestId = newRequestId() // 同一次发送的所有重试共用，后端据此去重
   try {
     const res = await retryWithBackoff(() => fetch(`${API_ROOT}/chat`, {
       method: 'POST',
@@ -238,7 +249,7 @@ export async function chatStream(
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ message, session_id: sessionId }),
+      body: JSON.stringify({ message, session_id: sessionId, request_id: requestId }),
       signal,
     }))
 
